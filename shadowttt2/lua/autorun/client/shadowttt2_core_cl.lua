@@ -328,20 +328,26 @@ local function collect_models()
       if istable(v) and isstring(v.model) and util.IsValidModel(v.model) then set[v.model] = true end
     end
   end
-  -- 3) fallback: scan known model filenames from mounted addons (best-effort)
-  local files = file.Find("models/*", "GAME") or {}
-  for _, f in ipairs(files) do
-    local path = "models/" .. f
-    -- only add known player models (heuristic: include paths that contain 'player' or are .mdl)
-    if string.find(f, ".mdl") or string.find(string.lower(f), "player") then
-      -- we need full model path; try to find .mdl files recursively
-      local mfiles = file.Find("models/" .. f .. "/*.mdl", "GAME")
-      for _, mf in ipairs(mfiles) do
-        local full = "models/" .. f .. "/" .. mf
-        if util.IsValidModel(full) then set[full] = true end
+  -- 3) fallback: recursively scan player model directories from mounted addons
+  local function addModel(path)
+    if util.IsValidModel(path) then set[path] = true end
+  end
+
+  local function scanModels(dir, depth)
+    if depth <= 0 then return end
+    local files, dirs = file.Find(dir .. "/*", "GAME")
+    for _, f in ipairs(files) do
+      if string.sub(f, -4) == ".mdl" then
+        addModel(dir .. "/" .. f)
       end
     end
+    for _, sub in ipairs(dirs) do
+      scanModels(dir .. "/" .. sub, depth - 1)
+    end
   end
+
+  scanModels("models/player", 4)
+  scanModels("models", 2) -- shallow scan to catch top-level models without recursing endlessly
 
   -- return sorted list
   local out = {}
