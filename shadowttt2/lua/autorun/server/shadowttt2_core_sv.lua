@@ -3,6 +3,7 @@ print("[ShadowTTT2] MODEL-ENUM SERVER loaded")
 
 ShadowTTT2 = ShadowTTT2 or {}
 ShadowTTT2.Admins = ShadowTTT2.Admins or { ["STEAM_0:1:15220591"] = true }
+ShadowTTT2.WorkshopPushed = ShadowTTT2.WorkshopPushed or {}
 ShadowTTT2.ServerCoreLoaded = true
 
 local function IsAdmin(ply) return IsValid(ply) and ShadowTTT2.Admins[ply:SteamID()] end
@@ -11,11 +12,11 @@ local function PushWorkshopDownloads()
   if not engine.GetAddons then return end
 
   local added = 0
-  local seen = {}
+  local seen = ShadowTTT2.WorkshopPushed
 
   for _, addon in ipairs(engine.GetAddons()) do
     local wsid = addon and addon.wsid
-    if addon and addon.mounted and wsid and not seen[wsid] then
+    if wsid and not seen[wsid] then
       local id = tostring(wsid)
       if string.match(id, "^%d+$") then
         resource.AddWorkshop(id)
@@ -25,9 +26,15 @@ local function PushWorkshopDownloads()
     end
   end
 
-  print(string.format("[ShadowTTT2] Pointshop // queued %d workshop addons for download", added))
+  if added == 0 then
+    print("[ShadowTTT2] Pointshop // no workshop addons detected; ensure your host_workshop_collection is mounted")
+  else
+    print(string.format("[ShadowTTT2] Pointshop // queued %d workshop addons for download", added))
+  end
 end
 hook.Add("Initialize", "ST2_PS_PUSH_WORKSHOP", PushWorkshopDownloads)
+-- Run once more after entities initialize to catch late-mounted workshop collections
+hook.Add("InitPostEntity", "ST2_PS_PUSH_WORKSHOP_LATE", PushWorkshopDownloads)
 
 util.AddNetworkString("ST2_ADMIN_REQUEST")
 util.AddNetworkString("ST2_ADMIN_OPEN")
