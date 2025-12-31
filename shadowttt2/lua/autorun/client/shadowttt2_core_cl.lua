@@ -90,10 +90,26 @@ do -- Admin panel helpers
     end
   end
 
+  local function setLineTextColor(line, color)
+    if not IsValid(line) then return end
+    color = color or THEME.text
+
+    if line.SetTextColor then
+      line:SetTextColor(color)
+      return
+    end
+
+    for _, col in ipairs(line.Columns or {}) do
+      if IsValid(col) and col.SetTextColor then
+        col:SetTextColor(color)
+      end
+    end
+  end
+
   local function addRow(list, ...)
     local line = list:AddLine(...)
     if not IsValid(line) then return end
-    line:SetTextColor(THEME.text)
+    setLineTextColor(line, THEME.text)
     line.Paint = function(self, w, h)
       local bg = self:IsLineSelected() and THEME.accent or Color(255, 255, 255, 6)
       draw.RoundedBox(0, 0, 0, w, h, bg)
@@ -207,7 +223,7 @@ do -- Admin panel helpers
       local status = row.enabled and "Aktiv" or "Deaktiviert"
       local line = list:AddLine(row.name or row.id, row.id, row.category or "workshop", row.price or 1, status)
       if IsValid(line) then
-        line:SetTextColor(row.enabled and THEME.text or THEME.muted)
+        setLineTextColor(line, row.enabled and THEME.text or THEME.muted)
         line.ShadowRowData = row
         line.Paint = function(self, w, h)
           local base = row.enabled and Color(255, 255, 255, 6) or Color(255, 90, 120, 18)
