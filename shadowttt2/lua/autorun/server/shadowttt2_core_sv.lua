@@ -18,8 +18,14 @@ local BLACKLISTED_MODELS = {
   ["models/alyx_interior.mdl"] = true
 }
 
+local function isPlayerModelPath(mdl)
+  if not isstring(mdl) then return false end
+  return string.find(string.lower(mdl), "models/player/", 1, true) ~= nil
+end
+
 local function isModelAllowed(mdl)
   if not isstring(mdl) then return false end
+  if not isPlayerModelPath(mdl) then return false end
   if BLACKLISTED_MODELS[string.lower(mdl)] then return false end
   return util.IsValidModel(mdl)
 end
