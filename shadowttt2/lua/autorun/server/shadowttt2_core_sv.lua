@@ -7,6 +7,28 @@ ShadowTTT2.ServerCoreLoaded = true
 
 local function IsAdmin(ply) return IsValid(ply) and ShadowTTT2.Admins[ply:SteamID()] end
 
+local function PushWorkshopDownloads()
+  if not engine.GetAddons then return end
+
+  local added = 0
+  local seen = {}
+
+  for _, addon in ipairs(engine.GetAddons()) do
+    local wsid = addon and addon.wsid
+    if addon and addon.mounted and wsid and not seen[wsid] then
+      local id = tostring(wsid)
+      if string.match(id, "^%d+$") then
+        resource.AddWorkshop(id)
+        seen[wsid] = true
+        added = added + 1
+      end
+    end
+  end
+
+  print(string.format("[ShadowTTT2] Pointshop // queued %d workshop addons for download", added))
+end
+hook.Add("Initialize", "ST2_PS_PUSH_WORKSHOP", PushWorkshopDownloads)
+
 util.AddNetworkString("ST2_ADMIN_REQUEST")
 util.AddNetworkString("ST2_ADMIN_OPEN")
 util.AddNetworkString("ST2_ADMIN_PLAYERLIST")
