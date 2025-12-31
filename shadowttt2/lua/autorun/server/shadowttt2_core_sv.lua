@@ -114,6 +114,8 @@ net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   if not IsAdmin(ply) then return end
   local act = net.ReadString()
   local sid = net.ReadString()
+  local class = act == "giveweapon" and string.Trim(net.ReadString() or "") or nil
+
   local tgt = player.GetBySteamID(sid)
   if not IsValid(tgt) then return end
   if act == "slay" then tgt:Kill()
@@ -123,6 +125,8 @@ net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   elseif act == "force_traitor" and tgt.SetRole then tgt:SetRole(ROLE_TRAITOR) SendFullStateUpdate()
   elseif act == "force_innocent" and tgt.SetRole then tgt:SetRole(ROLE_INNOCENT) SendFullStateUpdate()
   elseif act == "roundrestart" then RunConsoleCommand("ttt_roundrestart")
+  elseif act == "giveweapon" and isstring(class) and class ~= "" then
+    tgt:Give(class)
   end
 end)
 

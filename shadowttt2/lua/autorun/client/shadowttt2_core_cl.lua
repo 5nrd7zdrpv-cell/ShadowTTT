@@ -165,7 +165,7 @@ do -- Admin panel helpers
   end)
 
   local function createActionButton(parent, label, action, getTarget)
-    local btn = vgui.Create("DButton", parent)
+    local btn = (parent.Add and parent:Add("DButton")) or vgui.Create("DButton", parent)
     btn:SetTall(48)
     btn:SetText(label)
     btn:SetFont("ST2.Button")
@@ -357,11 +357,23 @@ do -- Admin panel helpers
     hint:SetTall(48)
     hint:SetText("Tipp: Doppelklick auf einen Spieler wählt ihn aus. Aktionen werden sofort ausgeführt.")
 
-    local actionGrid = vgui.Create("DIconLayout", right)
-    actionGrid:Dock(FILL)
-    actionGrid:DockMargin(10, 0, 10, 10)
+    local actionScroll = vgui.Create("DScrollPanel", right)
+    actionScroll:Dock(FILL)
+    actionScroll:DockMargin(10, 0, 10, 10)
+    local actionGrid = actionScroll:Add("DIconLayout")
+    actionGrid:Dock(TOP)
+    actionGrid:DockMargin(0, 4, 0, 4)
     actionGrid:SetSpaceX(10)
     actionGrid:SetSpaceY(10)
+    actionGrid:SetStretchWidth(true)
+    if IsValid(actionScroll.VBar) then
+      actionScroll.VBar.Paint = function(_, w, h)
+        draw.RoundedBox(8, 0, 0, w, h, Color(20, 20, 26, 150))
+      end
+      actionScroll.VBar.btnGrip.Paint = function(_, w, h)
+        draw.RoundedBox(6, 0, 0, w, h, THEME.accent)
+      end
+    end
 
     local function getSelectedSid()
       local lineID = list:GetSelectedLine()
@@ -383,6 +395,51 @@ do -- Admin panel helpers
     for _, info in ipairs(actions) do
       local btn = createActionButton(actionGrid, info.label, info.id, getSelectedSid)
       btn:SetWide(230)
+    end
+
+    local giveWeaponPanel = actionGrid:Add("DPanel")
+    giveWeaponPanel:SetSize(230, 120)
+    giveWeaponPanel.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(32, 32, 42, 230))
+    end
+
+    local giveWeaponLabel = vgui.Create("DLabel", giveWeaponPanel)
+    giveWeaponLabel:Dock(TOP)
+    giveWeaponLabel:DockMargin(10, 8, 10, 4)
+    giveWeaponLabel:SetTall(20)
+    giveWeaponLabel:SetFont("ST2.Subtitle")
+    giveWeaponLabel:SetTextColor(THEME.text)
+    giveWeaponLabel:SetText("Waffe geben")
+
+    local giveWeaponEntry = vgui.Create("DTextEntry", giveWeaponPanel)
+    giveWeaponEntry:Dock(TOP)
+    giveWeaponEntry:DockMargin(10, 0, 10, 8)
+    giveWeaponEntry:SetTall(30)
+    giveWeaponEntry:SetFont("ST2.Body")
+    giveWeaponEntry:SetTextColor(THEME.text)
+    if giveWeaponEntry.SetPlaceholderText then
+      giveWeaponEntry:SetPlaceholderText("Klasse eingeben (z.B. weapon_ttt_m16)")
+    end
+    giveWeaponEntry.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
+    end
+
+    local giveWeaponButton = vgui.Create("DButton", giveWeaponPanel)
+    giveWeaponButton:Dock(BOTTOM)
+    giveWeaponButton:DockMargin(10, 0, 10, 10)
+    giveWeaponButton:SetTall(34)
+    giveWeaponButton:SetText("Waffe geben")
+    styleButton(giveWeaponButton)
+    giveWeaponButton.DoClick = function()
+      local sid = getSelectedSid()
+      local class = string.Trim(giveWeaponEntry:GetText() or "")
+      if not sid or class == "" then return end
+      net.Start("ST2_ADMIN_ACTION")
+      net.WriteString("giveweapon")
+      net.WriteString(sid)
+      net.WriteString(class)
+      net.SendToServer()
     end
 
     list.OnRowSelected = function(_, _, line)
