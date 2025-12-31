@@ -374,11 +374,13 @@ local function buildShopTab(parent)
   search.OnChange = rebuild
   rebuild()
 
-  return function()
+  local function refresh()
     for _, fn in ipairs(refreshers) do
       fn()
     end
   end
+
+  return container, refresh
 end
 
 local function buildWorkshopTab(parent)
@@ -407,11 +409,13 @@ local function buildWorkshopTab(parent)
     table.insert(refreshers, buildWorkshopCard(list, blueprint))
   end
 
-  return function()
+  local function refresh()
     for _, fn in ipairs(refreshers) do
       fn()
     end
   end
+
+  return container, refresh
 end
 
 local function buildFrame()
@@ -455,17 +459,17 @@ local function buildFrame()
     draw.SimpleText(tab:GetText(), "ST2.Body", 12, h / 2, color_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
   end
 
-  local shop = buildShopTab(tabs)
-  local workshop = buildWorkshopTab(tabs)
+  local shopPanel, shopRefresh = buildShopTab(tabs)
+  local workshopPanel, workshopRefresh = buildWorkshopTab(tabs)
 
-  tabs:AddSheet("Shop", shop, "icon16/cart.png")
-  tabs:AddSheet("Werkstatt", workshop, "icon16/wrench.png")
+  tabs:AddSheet("Shop", shopPanel, "icon16/cart.png")
+  tabs:AddSheet("Werkstatt", workshopPanel, "icon16/wrench.png")
 
   refreshUI = function()
     if not IsValid(activeFrame) then return end
     if statsUpdater then statsUpdater() end
-    if shop then shop() end
-    if workshop then workshop() end
+    if shopRefresh then shopRefresh() end
+    if workshopRefresh then workshopRefresh() end
   end
 end
 
