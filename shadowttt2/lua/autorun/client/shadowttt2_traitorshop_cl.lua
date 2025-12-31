@@ -29,6 +29,7 @@ surface.CreateFont("ST2.Hero", {font = "Roboto", size = 28, weight = 800})
 surface.CreateFont("ST2.Title", {font = "Roboto", size = 22, weight = 700})
 surface.CreateFont("ST2.Body", {font = "Roboto", size = 16, weight = 600})
 surface.CreateFont("ST2.Small", {font = "Roboto", size = 14, weight = 500})
+surface.CreateFont("ST2.Mono", {font = "Consolas", size = 14, weight = 500})
 
 local function requestSnapshot()
   net.Start("ST2_TS_SYNC_REQUEST")
@@ -131,7 +132,8 @@ local function buildItemCard(layout, catId, item)
   local icon = vgui.Create("DImage", pnl)
   icon:SetSize(64, 64)
   icon:SetPos(250, 16)
-  icon:SetImage(item.icon or "icon16/star.png")
+  icon:SetImage(item.icon or "icon16/plugin.png")
+  icon:SetVisible(item.icon ~= "" and item.icon ~= nil)
 
   local btn = vgui.Create("DButton", pnl)
   btn:SetSize(160, 32)
@@ -182,6 +184,19 @@ local function buildItemCard(layout, catId, item)
       net.WriteString(catId)
       net.WriteString(item.id)
     net.SendToServer()
+  end
+
+  if item.wsid and item.wsid ~= "" then
+    btn.DoRightClick = function()
+      local menu = DermaMenu()
+      menu:AddOption("Workshop Details öffnen", function()
+        gui.OpenURL("https://steamcommunity.com/workshop/filedetails/?id=" .. item.wsid)
+      end):SetIcon("icon16/plugin.png")
+      if item.author then
+        menu:AddOption("Autor: " .. item.author, function() end):SetIcon("icon16/user.png")
+      end
+      menu:Open()
+    end
   end
 
   refresh()

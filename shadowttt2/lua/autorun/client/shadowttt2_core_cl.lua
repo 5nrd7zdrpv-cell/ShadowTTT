@@ -168,6 +168,82 @@ do -- Admin panel helpers
     return btn
   end
 
+  local function sendTraitorShopRequest()
+    net.Start("ST2_TS_ADMIN_CONFIG_REQUEST")
+    net.SendToServer()
+  end
+
+  local function sendTraitorShopRescan()
+    net.Start("ST2_TS_ADMIN_RESCAN")
+    net.SendToServer()
+  end
+
+  local function sendTraitorShopToggle(id)
+    net.Start("ST2_TS_ADMIN_TOGGLE")
+    net.WriteString(id)
+    net.SendToServer()
+  end
+
+  local function sendTraitorShopPrice(id, price, useDefault)
+    net.Start("ST2_TS_ADMIN_PRICE")
+    net.WriteString(id)
+    net.WriteBool(useDefault)
+    net.WriteUInt(math.max(0, math.floor(price or 0)), 16)
+    net.SendToServer()
+  end
+
+  local function populateShopList(list, entries, filter)
+    if not IsValid(list) then return end
+    list:Clear()
+    local q = string.Trim(string.lower(filter or ""))
+    for _, row in ipairs(entries or {}) do
+      if q ~= "" then
+        local haystack = string.lower(row.id .. " " .. (row.name or "") .. " " .. (row.category or ""))
+        if not string.find(haystack, q, 1, true) then continue end
+      end
+
+      local status = row.enabled and "Aktiv" or "Deaktiviert"
+      local line = list:AddLine(row.name or row.id, row.id, row.category or "workshop", row.price or 1, status)
+      if IsValid(line) then
+        line:SetTextColor(row.enabled and THEME.text or THEME.muted)
+        line.ShadowRowData = row
+        line.Paint = function(self, w, h)
+          local base = row.enabled and Color(255, 255, 255, 6) or Color(255, 90, 120, 18)
+          if self:IsLineSelected() then
+            base = row.enabled and THEME.accent or Color(255, 120, 140)
+          end
+          draw.RoundedBox(0, 0, 0, w, h, base)
+        end
+      end
+    end
+  end
+
+  net.Receive("ST2_TS_ADMIN_CONFIG", function()
+    local ui = ShadowTTT2.AdminUI
+    if not ui then return end
+
+    local count = net.ReadUInt(12)
+    local entries = {}
+    for _ = 1, count do
+      table.insert(entries, {
+        id = net.ReadString(),
+        name = net.ReadString(),
+        price = net.ReadUInt(12),
+        enabled = net.ReadBool(),
+        category = net.ReadString(),
+        author = net.ReadString(),
+      })
+    end
+
+    ui.shopEntries = entries
+    if IsValid(ui.shopList) then
+      populateShopList(ui.shopList, entries, IsValid(ui.shopSearch) and ui.shopSearch:GetText() or "")
+      if ui.shopList:GetLineCount() > 0 then
+        ui.shopList:SelectFirstItem()
+      end
+    end
+  end)
+
   local function openAdminPanel()
     local f = createFrame("ShadowTTT2 Adminpanel", 1040, 640)
     f.OnRemove = function()
@@ -176,19 +252,31 @@ do -- Admin panel helpers
 
     local header = vgui.Create("DLabel", f)
     header:SetPos(16, 52)
-    header:SetSize(720, 24)
+    header:SetSize(900, 24)
     header:SetFont("ST2.Subtitle")
     header:SetTextColor(THEME.muted)
-    header:SetText("Moderate rounds schneller: wähle einen Spieler und eine Aktion")
+    header:SetText("Moderation & Traitor-Shop Verwaltung")
 
-    local container = vgui.Create("DPanel", f)
-    container:SetPos(12, 80)
-    container:SetSize(1016, 548)
-    container.Paint = function(_, w, h)
+    local sheet = vgui.Create("DPropertySheet", f)
+    sheet:SetPos(12, 80)
+    sheet:SetSize(1016, 548)
+    sheet.Paint = function(_, w, h)
       draw.RoundedBox(12, 0, 0, w, h, Color(26, 26, 34, 230))
     end
+    function sheet:PaintTab(tab, w, h)
+      local active = self:GetActiveTab() == tab
+      local col = active and THEME.accent_soft or THEME.panel
+      draw.RoundedBox(8, 0, 0, w, h, col)
+      draw.SimpleText(tab:GetText(), "ST2.Body", 12, h / 2, color_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
 
-    local left = vgui.Create("DPanel", container)
+    -- Moderation tab
+    local moderation = vgui.Create("DPanel", sheet)
+    moderation.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(26, 26, 34, 0))
+    end
+
+    local left = vgui.Create("DPanel", moderation)
     left:Dock(LEFT)
     left:SetWide(480)
     left:DockMargin(12, 12, 8, 12)
@@ -228,7 +316,7 @@ do -- Admin panel helpers
       requestAdminPlayerList(list)
     end
 
-    local right = vgui.Create("DPanel", container)
+    local right = vgui.Create("DPanel", moderation)
     right:Dock(FILL)
     right:DockMargin(8, 12, 12, 12)
     right.Paint = function(_, w, h)
@@ -294,13 +382,167 @@ do -- Admin panel helpers
       populateAdminList(list, ui.players, value)
     end
 
+    -- Traitor shop tab
+    local shopPanel = vgui.Create("DPanel", sheet)
+    shopPanel.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(26, 26, 34, 0))
+    end
+
+    local shopLeft = vgui.Create("DPanel", shopPanel)
+    shopLeft:Dock(LEFT)
+    shopLeft:SetWide(520)
+    shopLeft:DockMargin(12, 12, 8, 12)
+    shopLeft.Paint = function(_, w, h)
+      draw.RoundedBox(10, 0, 0, w, h, Color(34, 34, 44, 230))
+    end
+
+    local shopSearch = vgui.Create("DTextEntry", shopLeft)
+    shopSearch:Dock(TOP)
+    shopSearch:DockMargin(10, 10, 10, 8)
+    shopSearch:SetTall(30)
+    shopSearch:SetFont("ST2.Body")
+    shopSearch:SetTextColor(THEME.text)
+    shopSearch:SetPlaceholderText("Filtere nach Name, ID oder Kategorie")
+    shopSearch.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
+    end
+
+    local shopList = vgui.Create("DListView", shopLeft)
+    shopList:Dock(FILL)
+    shopList:DockMargin(10, 0, 10, 10)
+    shopList:AddColumn("Name")
+    shopList:AddColumn("ID")
+    shopList:AddColumn("Kategorie")
+    shopList:AddColumn("Preis")
+    shopList:AddColumn("Status")
+    styleListView(shopList)
+
+    local shopRefresh = vgui.Create("DButton", shopLeft)
+    shopRefresh:Dock(BOTTOM)
+    shopRefresh:DockMargin(10, 0, 10, 10)
+    shopRefresh:SetTall(34)
+    shopRefresh:SetText("Workshop erneut scannen")
+    styleButton(shopRefresh)
+    shopRefresh.DoClick = sendTraitorShopRescan
+
+    local shopRight = vgui.Create("DPanel", shopPanel)
+    shopRight:Dock(FILL)
+    shopRight:DockMargin(8, 12, 12, 12)
+    shopRight.Paint = function(_, w, h)
+      draw.RoundedBox(10, 0, 0, w, h, Color(34, 34, 44, 230))
+    end
+
+    local shopTitle = vgui.Create("DLabel", shopRight)
+    shopTitle:Dock(TOP)
+    shopTitle:DockMargin(10, 10, 10, 6)
+    shopTitle:SetFont("ST2.Subtitle")
+    shopTitle:SetTextColor(THEME.text)
+    shopTitle:SetText("Kein Item ausgewählt")
+
+    local shopMeta = vgui.Create("DLabel", shopRight)
+    shopMeta:Dock(TOP)
+    shopMeta:DockMargin(10, 0, 10, 10)
+    shopMeta:SetFont("ST2.Body")
+    shopMeta:SetTextColor(THEME.muted)
+    shopMeta:SetWrap(true)
+    shopMeta:SetTall(48)
+    shopMeta:SetText("Tippe links, um Items zu filtern. Rechtsklick auf einen Eintrag schaltet ihn um.")
+
+    local priceRow = vgui.Create("DPanel", shopRight)
+    priceRow:Dock(TOP)
+    priceRow:DockMargin(10, 0, 10, 6)
+    priceRow:SetTall(38)
+    priceRow.Paint = function() end
+
+    local priceWang = vgui.Create("DNumberWang", priceRow)
+    priceWang:Dock(LEFT)
+    priceWang:SetWide(120)
+    priceWang:SetMin(0)
+    priceWang:SetMax(1000)
+    priceWang:SetDecimals(0)
+    priceWang:SetValue(1)
+    priceWang:SetFont("ST2.Body")
+
+    local priceApply = vgui.Create("DButton", priceRow)
+    priceApply:Dock(LEFT)
+    priceApply:DockMargin(10, 0, 0, 0)
+    priceApply:SetWide(140)
+    priceApply:SetText("Preis speichern")
+    styleButton(priceApply)
+
+    local priceReset = vgui.Create("DButton", priceRow)
+    priceReset:Dock(LEFT)
+    priceReset:DockMargin(10, 0, 0, 0)
+    priceReset:SetWide(140)
+    priceReset:SetText("Standardpreis")
+    styleButton(priceReset)
+
+    local toggleButton = vgui.Create("DButton", shopRight)
+    toggleButton:Dock(TOP)
+    toggleButton:DockMargin(10, 6, 10, 10)
+    toggleButton:SetTall(40)
+    toggleButton:SetText("Item aktivieren/deaktivieren")
+    styleButton(toggleButton)
+
+    local selectedRow
+    local function updateSelected(line)
+      selectedRow = line and line.ShadowRowData
+      if not selectedRow then
+        shopTitle:SetText("Kein Item ausgewählt")
+        shopMeta:SetText("Tippe links, um Items zu filtern. Rechtsklick auf einen Eintrag schaltet ihn um.")
+        return
+      end
+
+      shopTitle:SetText(string.format("%s (%s)", selectedRow.name or selectedRow.id, selectedRow.id))
+      shopMeta:SetText(string.format("Kategorie: %s | Status: %s | Autor: %s", selectedRow.category or "workshop", selectedRow.enabled and "Aktiv" or "Deaktiviert", selectedRow.author or "Unbekannt"))
+      priceWang:SetValue(selectedRow.price or 1)
+      toggleButton:SetText(selectedRow.enabled and "Item deaktivieren" or "Item aktivieren")
+    end
+
+    shopList.OnRowSelected = function(_, _, line)
+      updateSelected(line)
+    end
+    shopList.DoDoubleClick = function(_, _, line)
+      if not IsValid(line) then return end
+      sendTraitorShopToggle(line:GetColumnText(2))
+    end
+
+    priceApply.DoClick = function()
+      if not selectedRow then return end
+      sendTraitorShopPrice(selectedRow.id, priceWang:GetValue(), false)
+    end
+
+    priceReset.DoClick = function()
+      if not selectedRow then return end
+      sendTraitorShopPrice(selectedRow.id, 0, true)
+    end
+
+    toggleButton.DoClick = function()
+      if not selectedRow then return end
+      sendTraitorShopToggle(selectedRow.id)
+    end
+
+    shopSearch.OnValueChange = function(_, value)
+      local ui = ShadowTTT2.AdminUI
+      if not ui then return end
+      populateShopList(shopList, ui.shopEntries or {}, value)
+    end
+
+    sheet:AddSheet("Moderation", moderation, "icon16/user.png")
+    sheet:AddSheet("Traitor Shop", shopPanel, "icon16/plugin.png")
+
     ShadowTTT2.AdminUI = {
       list = list,
       search = search,
       players = {},
+      shopList = shopList,
+      shopSearch = shopSearch,
+      shopEntries = {},
     }
 
     requestAdminPlayerList(list)
+    sendTraitorShopRequest()
   end
 
   net.Receive("ST2_ADMIN_OPEN", openAdminPanel)
