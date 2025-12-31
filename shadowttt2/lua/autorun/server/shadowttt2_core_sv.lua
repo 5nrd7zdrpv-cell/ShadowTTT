@@ -35,6 +35,23 @@ util.AddNetworkString("ST2_ADMIN_PLAYERLIST")
 util.AddNetworkString("ST2_ADMIN_ACTION")
 util.AddNetworkString("ST2_PS_EQUIP")
 
+local function ShouldInstantHeadshotKill(target, attacker)
+  if not IsValid(target) or not target:IsPlayer() or not target:Alive() then return false end
+  if not IsValid(attacker) or not attacker:IsPlayer() then return false end
+  if attacker == target then return false end
+  if attacker.IsSameTeam and attacker:IsSameTeam(target) then return false end
+  return true
+end
+
+hook.Add("ScalePlayerDamage", "ST2_HEADSHOT_KILL", function(ply, hitgroup, dmginfo)
+  if hitgroup ~= HITGROUP_HEAD then return end
+
+  local attacker = dmginfo:GetAttacker()
+  if not ShouldInstantHeadshotKill(ply, attacker) then return end
+
+  dmginfo:SetDamage(ply:Health() + ply:Armor())
+end)
+
 concommand.Add("shadow_admin_open", function(ply)
   if not IsAdmin(ply) then return end
   net.Start("ST2_ADMIN_OPEN") net.Send(ply)
