@@ -7,6 +7,30 @@ ShadowTTT2.WorkshopPushed = ShadowTTT2.WorkshopPushed or {}
 ShadowTTT2.ServerCoreLoaded = true
 
 local function IsAdmin(ply) return IsValid(ply) and ShadowTTT2.Admins[ply:SteamID()] end
+local RECOIL_MULTIPLIER = 0.45
+
+local function ReduceRecoil(wep)
+  if not IsValid(wep) then return end
+  if wep.ST2_RecoilTweaked then return end
+  local primary = wep.Primary
+  if not istable(primary) then return end
+  local recoil = primary.Recoil
+  if not isnumber(recoil) then return end
+
+  wep.ST2_RecoilTweaked = true
+  wep.Primary.Recoil = recoil * RECOIL_MULTIPLIER
+end
+
+hook.Add("WeaponEquip", "ST2_ReduceRecoilOnEquip", function(wep)
+  ReduceRecoil(wep)
+end)
+
+hook.Add("OnEntityCreated", "ST2_ReduceRecoilOnSpawn", function(ent)
+  if not ent:IsWeapon() then return end
+  timer.Simple(0, function()
+    ReduceRecoil(ent)
+  end)
+end)
 
 local function PushWorkshopDownloads()
   if not engine.GetAddons then return end
