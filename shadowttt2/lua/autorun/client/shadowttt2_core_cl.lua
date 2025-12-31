@@ -210,6 +210,12 @@ do -- Admin panel helpers
     net.SendToServer()
   end
 
+  local function sendTraitorShopAdd(id)
+    net.Start("ST2_TS_ADMIN_ADD")
+    net.WriteString(id)
+    net.SendToServer()
+  end
+
   local function populateShopList(list, entries, filter)
     if not IsValid(list) then return end
     list:Clear()
@@ -500,6 +506,50 @@ do -- Admin panel helpers
     shopRefresh:SetText("Workshop erneut scannen")
     styleButton(shopRefresh)
     shopRefresh.DoClick = sendTraitorShopRescan
+
+    local shopAdd = vgui.Create("DPanel", shopLeft)
+    shopAdd:Dock(BOTTOM)
+    shopAdd:DockMargin(10, 0, 10, 6)
+    shopAdd:SetTall(70)
+    shopAdd.Paint = function(_, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(32, 32, 42, 230))
+    end
+
+    local shopAddLabel = vgui.Create("DLabel", shopAdd)
+    shopAddLabel:Dock(TOP)
+    shopAddLabel:DockMargin(8, 6, 8, 2)
+    shopAddLabel:SetFont("ST2.Body")
+    shopAddLabel:SetTextColor(THEME.text)
+    shopAddLabel:SetText("Manuelles Item hinzufügen (Klassenname)")
+
+    local shopAddRow = vgui.Create("DPanel", shopAdd)
+    shopAddRow:Dock(FILL)
+    shopAddRow:DockMargin(8, 0, 8, 8)
+    shopAddRow.Paint = function() end
+
+    local shopAddEntry = vgui.Create("DTextEntry", shopAddRow)
+    shopAddEntry:Dock(FILL)
+    shopAddEntry:SetTall(28)
+    shopAddEntry:SetFont("ST2.Body")
+    shopAddEntry:SetTextColor(THEME.text)
+    shopAddEntry:SetPlaceholderText("z.B. weapon_xy")
+    shopAddEntry.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
+    end
+
+    local shopAddButton = vgui.Create("DButton", shopAddRow)
+    shopAddButton:Dock(RIGHT)
+    shopAddButton:DockMargin(6, 0, 0, 0)
+    shopAddButton:SetWide(150)
+    shopAddButton:SetText("Hinzufügen")
+    styleButton(shopAddButton)
+    shopAddButton.DoClick = function()
+      local id = string.Trim(shopAddEntry:GetText() or "")
+      if id == "" then return end
+      sendTraitorShopAdd(id)
+      shopAddEntry:SetText("")
+    end
 
     local shopRight = vgui.Create("DPanel", shopPanel)
     shopRight:Dock(FILL)

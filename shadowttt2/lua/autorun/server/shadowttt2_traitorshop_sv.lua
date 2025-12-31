@@ -12,6 +12,7 @@ util.AddNetworkString("ST2_TS_ADMIN_CONFIG_REQUEST")
 util.AddNetworkString("ST2_TS_ADMIN_TOGGLE")
 util.AddNetworkString("ST2_TS_ADMIN_RESCAN")
 util.AddNetworkString("ST2_TS_ADMIN_PRICE")
+util.AddNetworkString("ST2_TS_ADMIN_ADD")
 
 local Owned = {}
 local Projects = {}
@@ -28,7 +29,8 @@ local BLUEPRINTS = {
 local SHOP_CONFIG_PATH = "shadowttt2/traitor_shop.json"
 local ShopConfig = {
   enabled = {},
-  prices = {}
+  prices = {},
+  custom = {}
 }
 
 local TRAITOR_ROLE = ROLE_TRAITOR or 2
@@ -53,13 +55,15 @@ local function loadShopConfig()
 
   ShopConfig.enabled = decoded.enabled or {}
   ShopConfig.prices = decoded.prices or {}
+  ShopConfig.custom = decoded.custom or {}
 end
 
 local function saveShopConfig()
   ensureDataFolder()
   file.Write(SHOP_CONFIG_PATH, util.TableToJSON({
     enabled = ShopConfig.enabled,
-    prices = ShopConfig.prices
+    prices = ShopConfig.prices,
+    custom = ShopConfig.custom
   }, true))
 end
 
@@ -74,6 +78,11 @@ local function getItemPrice(id, wep)
     return ShopConfig.prices[id]
   end
 
+  if istable(wep) then
+    if isnumber(wep.price) then return wep.price end
+    if isnumber(wep.Price) then return wep.Price end
+  end
+
   if istable(wep) and istable(wep.EquipMenuData) then
     if wep.EquipMenuData.price then return wep.EquipMenuData.price end
     if wep.EquipMenuData.cost then return wep.EquipMenuData.cost end
@@ -84,6 +93,29 @@ local function getItemPrice(id, wep)
   end
 
   return 1
+end
+
+local function buildItemData(id, wep, fallbackCategory)
+  if not id or id == "" then return end
+
+  local stored = wep or weapons.GetStored(id) or weapons.Get(id)
+  local menu = stored and stored.EquipMenuData or {}
+  local name = menu.name or (stored and stored.PrintName) or id
+  local desc = menu.desc or (menu.description or (stored and stored.Instructions)) or ""
+  local category = string.lower(menu.type or fallbackCategory or "custom")
+  local icon = (menu and menu.icon) or (stored and (stored.Icon or stored.IconOverride))
+  local author = stored and (stored.Author or stored.author)
+
+  return {
+    id = id,
+    name = name,
+    desc = desc,
+    weapon = id,
+    price = getItemPrice(id, stored),
+    icon = icon,
+    category = category,
+    author = author
+  }
 end
 
 local function buildTraitorItemsFromWorkshop()
@@ -128,25 +160,42 @@ local function buildTraitorItemsFromWorkshop()
   return entries
 end
 
+local function addItemToCatalogue(item)
+  if not item or not item.id then return end
+  CatalogueLookup[item.id] = item
+  if not itemEnabled(item.id) then return end
+
+  local catId = item.category or "workshop"
+  local catName = string.gsub(catId, "^%l", string.upper)
+
+  Catalogue[catId] = Catalogue[catId] or {
+    name = catName,
+    icon = "icon16/plugin.png",
+    items = {}
+  }
+
+  table.insert(Catalogue[catId].items, item)
+end
+
 local function rebuildCatalogue()
   Catalogue = {}
   CatalogueLookup = {}
 
   local entries = buildTraitorItemsFromWorkshop()
   for _, item in ipairs(entries) do
-    CatalogueLookup[item.id] = item
-    if not itemEnabled(item.id) then continue end
+    addItemToCatalogue(item)
+  end
 
-    local catId = item.category or "workshop"
-    local catName = string.gsub(catId, "^%l", string.upper)
-
-    Catalogue[catId] = Catalogue[catId] or {
-      name = catName,
-      icon = "icon16/plugin.png",
-      items = {}
-    }
-
-    table.insert(Catalogue[catId].items, item)
+  for id, data in pairs(ShopConfig.custom or {}) do
+    if CatalogueLookup[id] then continue end
+    local entry = buildItemData(id, data, data.category or "custom")
+    if entry then
+      entry.price = data.price or entry.price
+      entry.icon = data.icon or entry.icon
+      entry.author = data.author or entry.author
+      entry.category = data.category or entry.category
+      addItemToCatalogue(entry)
+    end
   end
 end
 
@@ -344,6 +393,34 @@ end)
 -- Admin rescans workshop weapons
 net.Receive("ST2_TS_ADMIN_RESCAN", function(_, ply)
   if not isAdmin(ply) then return end
+  rebuildCatalogue()
+  syncAdminConfig(ply)
+  resyncAllTraitors()
+end)
+
+-- Admin manually adds a shop item by weapon id/classname
+net.Receive("ST2_TS_ADMIN_ADD", function(_, ply)
+  if not isAdmin(ply) then return end
+
+  local id = string.Trim(net.ReadString() or "")
+  if id == "" then return end
+  if CatalogueLookup[id] then return end
+
+  local entry = buildItemData(id, ShopConfig.custom[id], "custom")
+  if not entry then return end
+
+  ShopConfig.custom[id] = {
+    id = entry.id,
+    name = entry.name,
+    desc = entry.desc,
+    weapon = entry.weapon,
+    price = entry.price,
+    icon = entry.icon,
+    category = entry.category,
+    author = entry.author
+  }
+
+  saveShopConfig()
   rebuildCatalogue()
   syncAdminConfig(ply)
   resyncAllTraitors()
