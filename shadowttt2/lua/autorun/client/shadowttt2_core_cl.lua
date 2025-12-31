@@ -1,19 +1,56 @@
 
 print("[ShadowTTT2] MODEL-ENUM CLIENT loaded")
 
+ShadowTTT2 = ShadowTTT2 or {}
+ShadowTTT2.CoreClientLoaded = true
+ShadowTTT2.PointshopEnhanced = true
+
+local function requestAdminPlayerList(listView)
+  if not IsValid(listView) then return end
+  ShadowTTT2.AdminListView = listView
+  net.Start("ST2_ADMIN_PLAYERLIST")
+  net.SendToServer()
+end
+
+net.Receive("ST2_ADMIN_PLAYERLIST", function()
+  local list = ShadowTTT2.AdminListView
+  if not IsValid(list) then return end
+
+  list:Clear()
+  local count = net.ReadUInt(8)
+  for i = 1, count do
+    local nick = net.ReadString()
+    local sid = net.ReadString()
+    local points = net.ReadInt(32)
+    list:AddLine(nick, sid, points)
+  end
+end)
+
 -- Admin open (client requests server concommand)
 concommand.Add("shadow_admin_open", function()
-  RunConsoleCommand("shadow_admin_open") -- server concommand triggers net msg back
+  net.Start("ST2_ADMIN_REQUEST")
+  net.SendToServer()
 end)
 
 -- admin panel receives ST2_ADMIN_OPEN net from server
 net.Receive("ST2_ADMIN_OPEN", function()
   local f = vgui.Create("DFrame")
   f:SetSize(900,560) f:Center() f:MakePopup() f:SetTitle("ShadowTTT2 Adminpanel (Final)")
+  f.OnRemove = function()
+    ShadowTTT2.AdminListView = nil
+  end
   local list = vgui.Create("DListView", f)
   list:SetPos(20,40) list:SetSize(420,480)
   list:AddColumn("Name") list:AddColumn("SteamID") list:AddColumn("Points")
-  for _,p in ipairs(player.GetAll()) do list:AddLine(p:Nick(), p:SteamID(), p:GetNWInt("ST2_Points",0)) end
+  requestAdminPlayerList(list)
+
+  local refresh = vgui.Create("DButton", f)
+  refresh:SetPos(20, 530)
+  refresh:SetSize(420, 20)
+  refresh:SetText("Refresh player list")
+  refresh.DoClick = function()
+    requestAdminPlayerList(list)
+  end
   local function btn(y,t,act)
     local b=vgui.Create("DButton",f); b:SetPos(470,y); b:SetSize(400,30); b:SetText(t)
     b.DoClick=function()
