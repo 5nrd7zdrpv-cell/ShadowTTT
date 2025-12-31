@@ -3,11 +3,17 @@ print("[ShadowTTT2] Traitor Shop Phase 3 server (unchanged)")
 
 util.AddNetworkString("ST2_TS_BUY")
 util.AddNetworkString("ST2_TS_SYNC")
+util.AddNetworkString("ST2_TS_SYNC_REQUEST")
 
 local Owned = {}
 
 hook.Add("TTTBeginRound","ST2_TS_ResetOwned", function()
   Owned = {}
+end)
+
+hook.Add("PlayerDisconnected", "ST2_TS_CleanupOwned", function(ply)
+  if not IsValid(ply) then return end
+  Owned[ply] = nil
 end)
 
 local ITEMS = {
@@ -17,6 +23,14 @@ local ITEMS = {
     c4 = {weapon="weapon_ttt_c4", price=2},
   }
 }
+
+net.Receive("ST2_TS_SYNC_REQUEST", function(_, ply)
+  if not IsValid(ply) then return end
+
+  net.Start("ST2_TS_SYNC")
+    net.WriteTable(Owned[ply] or {})
+  net.Send(ply)
+end)
 
 net.Receive("ST2_TS_BUY", function(_, ply)
   if not ply:IsActiveTraitor() then return end

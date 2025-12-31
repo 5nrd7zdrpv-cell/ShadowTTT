@@ -2,10 +2,19 @@
 print("[ShadowTTT2] Traitor Shop Phase 3 client (FIXED)")
 
 local OWNED = {}
+local refreshOwnedUI
 
 net.Receive("ST2_TS_SYNC", function()
   OWNED = net.ReadTable() or {}
+  if isfunction(refreshOwnedUI) then
+    refreshOwnedUI()
+  end
 end)
+
+local function requestOwned()
+  net.Start("ST2_TS_SYNC_REQUEST")
+  net.SendToServer()
+end
 
 local SHOP = {
   equipment = {
@@ -22,6 +31,8 @@ hook.Add("PlayerButtonDown","ST2_TS_PHASE3_FIX",function(_,key)
   if key ~= KEY_C then return end
   if not LocalPlayer():IsActiveTraitor() then return end
 
+  requestOwned()
+
   local f = vgui.Create("DFrame")
   f:SetSize(780,540)
   f:Center()
@@ -37,6 +48,8 @@ hook.Add("PlayerButtonDown","ST2_TS_PHASE3_FIX",function(_,key)
   local tabs = vgui.Create("DPropertySheet", f)
   tabs:SetPos(20,60)
   tabs:SetSize(740,450)
+
+  local refreshers = {}
 
   for catid,cat in pairs(SHOP) do
     local pnl = vgui.Create("DPanel", tabs)
@@ -72,8 +85,7 @@ hook.Add("PlayerButtonDown","ST2_TS_PHASE3_FIX",function(_,key)
 
       local lbl = vgui.Create("DLabel", row)
       lbl:SetPos(60,10)
-      lbl:SetText(it.name .. " (" .. it.price .. "c)
-" .. it.desc)
+      lbl:SetText(it.name .. " (" .. it.price .. "c)\n" .. it.desc)
       lbl:SizeToContents()
 
       local btn = vgui.Create("DButton", row)
@@ -107,9 +119,21 @@ hook.Add("PlayerButtonDown","ST2_TS_PHASE3_FIX",function(_,key)
         end)
       end
 
+      table.insert(refreshers, refresh)
       y = y + 70
     end
 
     tabs:AddSheet(cat.name, pnl, "icon16/star.png")
+  end
+
+  refreshOwnedUI = function()
+    for _, fn in ipairs(refreshers) do
+      fn()
+    end
+  end
+  refreshOwnedUI()
+
+  f.OnRemove = function()
+    refreshOwnedUI = nil
   end
 end)

@@ -1,6 +1,12 @@
 
 print("[ShadowTTT2] FINAL client init")
 
+ShadowTTT2 = ShadowTTT2 or {}
+if ShadowTTT2.CoreClientLoaded then
+  -- Prefer the enhanced client core; keep this file as a fallback without double-hooking.
+  return
+end
+
 -- ADMIN OPEN
 concommand.Add("shadow_admin_open",function()
   net.Start("ST2_ADMIN_REQUEST") net.SendToServer()
