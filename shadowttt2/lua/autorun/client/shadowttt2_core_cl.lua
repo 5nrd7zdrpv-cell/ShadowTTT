@@ -262,7 +262,7 @@ do -- Admin panel helpers
     ui.shopEntries = entries
     if IsValid(ui.shopList) then
       populateShopList(ui.shopList, entries, IsValid(ui.shopSearch) and ui.shopSearch:GetText() or "")
-      if ui.shopList:GetLineCount() > 0 then
+      if ui.shopList.GetLineCount and ui.shopList:GetLineCount() > 0 then
         ui.shopList:SelectFirstItem()
       end
     end
