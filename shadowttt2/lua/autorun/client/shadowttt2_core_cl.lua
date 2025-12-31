@@ -474,7 +474,15 @@ local function openPointshop(models)
       if q == "" or string.find(string.lower(m), q, 1, true) then
         local line = listv:AddLine(m)
         if IsValid(line) then
-          line:SetTextColor(THEME.text)
+          if line.SetTextColor then
+            line:SetTextColor(THEME.text)
+          else
+            for _, col in ipairs(line.Columns or {}) do
+              if IsValid(col) and col.SetTextColor then
+                col:SetTextColor(THEME.text)
+              end
+            end
+          end
           line.Paint = function(self, w, h)
             local bg = self:IsLineSelected() and THEME.accent or Color(255, 255, 255, 6)
             draw.RoundedBox(0, 0, 0, w, h, bg)
