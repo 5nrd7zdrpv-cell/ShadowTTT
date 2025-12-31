@@ -385,6 +385,51 @@ do -- Admin panel helpers
       btn:SetWide(230)
     end
 
+    local giveWeaponPanel = actionGrid:Add("DPanel")
+    giveWeaponPanel:SetSize(230, 120)
+    giveWeaponPanel.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(32, 32, 42, 230))
+    end
+
+    local giveWeaponLabel = vgui.Create("DLabel", giveWeaponPanel)
+    giveWeaponLabel:Dock(TOP)
+    giveWeaponLabel:DockMargin(10, 8, 10, 4)
+    giveWeaponLabel:SetTall(20)
+    giveWeaponLabel:SetFont("ST2.Subtitle")
+    giveWeaponLabel:SetTextColor(THEME.text)
+    giveWeaponLabel:SetText("Waffe geben")
+
+    local giveWeaponEntry = vgui.Create("DTextEntry", giveWeaponPanel)
+    giveWeaponEntry:Dock(TOP)
+    giveWeaponEntry:DockMargin(10, 0, 10, 8)
+    giveWeaponEntry:SetTall(30)
+    giveWeaponEntry:SetFont("ST2.Body")
+    giveWeaponEntry:SetTextColor(THEME.text)
+    if giveWeaponEntry.SetPlaceholderText then
+      giveWeaponEntry:SetPlaceholderText("Klasse eingeben (z.B. weapon_ttt_m16)")
+    end
+    giveWeaponEntry.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
+    end
+
+    local giveWeaponButton = vgui.Create("DButton", giveWeaponPanel)
+    giveWeaponButton:Dock(BOTTOM)
+    giveWeaponButton:DockMargin(10, 0, 10, 10)
+    giveWeaponButton:SetTall(34)
+    giveWeaponButton:SetText("Waffe geben")
+    styleButton(giveWeaponButton)
+    giveWeaponButton.DoClick = function()
+      local sid = getSelectedSid()
+      local class = string.Trim(giveWeaponEntry:GetText() or "")
+      if not sid or class == "" then return end
+      net.Start("ST2_ADMIN_ACTION")
+      net.WriteString("giveweapon")
+      net.WriteString(sid)
+      net.WriteString(class)
+      net.SendToServer()
+    end
+
     list.OnRowSelected = function(_, _, line)
       local name = line:GetColumnText(1)
       local sid = line:GetColumnText(2)
