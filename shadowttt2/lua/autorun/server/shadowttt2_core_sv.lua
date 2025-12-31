@@ -32,9 +32,16 @@ hook.Add("OnEntityCreated", "ST2_ReduceRecoilOnSpawn", function(ent)
   end)
 end)
 
-local function PushWorkshopDownloads()
+local function scheduleWorkshopRetry(nextAttempt)
+  timer.Create("ST2_PS_PUSH_WORKSHOP_RETRY", math.min(30, nextAttempt * 5), 1, function()
+    PushWorkshopDownloads(nextAttempt)
+  end)
+end
+
+function PushWorkshopDownloads(attempt)
   if not engine.GetAddons then return end
 
+  attempt = attempt or 1
   local added = 0
   local seen = ShadowTTT2.WorkshopPushed
 
@@ -51,14 +58,24 @@ local function PushWorkshopDownloads()
   end
 
   if added == 0 then
-    print("[ShadowTTT2] Pointshop // no workshop addons detected; ensure your host_workshop_collection is mounted")
+    if not timer.Exists("ST2_PS_PUSH_WORKSHOP_RETRY") and attempt < 6 then
+      print(string.format("[ShadowTTT2] Pointshop // no workshop addons detected (attempt %d); retrying to catch late mounts...", attempt))
+      scheduleWorkshopRetry(attempt + 1)
+    else
+      print("[ShadowTTT2] Pointshop // no workshop addons detected; ensure your host_workshop_collection is mounted")
+    end
   else
-    print(string.format("[ShadowTTT2] Pointshop // queued %d workshop addons for download", added))
+    timer.Remove("ST2_PS_PUSH_WORKSHOP_RETRY")
+    print(string.format("[ShadowTTT2] Pointshop // queued %d workshop addons for download (attempt %d)", added, attempt))
   end
 end
-hook.Add("Initialize", "ST2_PS_PUSH_WORKSHOP", PushWorkshopDownloads)
+hook.Add("Initialize", "ST2_PS_PUSH_WORKSHOP", function()
+  PushWorkshopDownloads(1)
+end)
 -- Run once more after entities initialize to catch late-mounted workshop collections
-hook.Add("InitPostEntity", "ST2_PS_PUSH_WORKSHOP_LATE", PushWorkshopDownloads)
+hook.Add("InitPostEntity", "ST2_PS_PUSH_WORKSHOP_LATE", function()
+  PushWorkshopDownloads(1)
+end)
 
 util.AddNetworkString("ST2_ADMIN_REQUEST")
 util.AddNetworkString("ST2_ADMIN_OPEN")
