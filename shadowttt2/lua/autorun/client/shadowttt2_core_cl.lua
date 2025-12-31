@@ -5,6 +5,8 @@ ShadowTTT2 = ShadowTTT2 or {}
 ShadowTTT2.CoreClientLoaded = true
 ShadowTTT2.PointshopEnhanced = true
 
+local activePointshopFrame
+
 local THEME = {
   bg = Color(18, 18, 24, 245),
   panel = Color(32, 32, 40, 240),
@@ -599,7 +601,19 @@ local function collect_models()
 end
 
 local function openPointshop(models)
+  if IsValid(activePointshopFrame) then
+    activePointshopFrame:MakePopup()
+    activePointshopFrame:RequestFocus()
+    return
+  end
+
   local f = createFrame("ShadowTTT2 Pointshop", 1040, 640)
+  activePointshopFrame = f
+  f.OnRemove = function()
+    if activePointshopFrame == f then
+      activePointshopFrame = nil
+    end
+  end
 
   local header = vgui.Create("DLabel", f)
   header:SetPos(16, 52)
