@@ -165,7 +165,7 @@ do -- Admin panel helpers
   end)
 
   local function createActionButton(parent, label, action, getTarget)
-    local btn = vgui.Create("DButton", parent)
+    local btn = (parent.Add and parent:Add("DButton")) or vgui.Create("DButton", parent)
     btn:SetTall(48)
     btn:SetText(label)
     btn:SetFont("ST2.Button")
@@ -357,11 +357,23 @@ do -- Admin panel helpers
     hint:SetTall(48)
     hint:SetText("Tipp: Doppelklick auf einen Spieler wählt ihn aus. Aktionen werden sofort ausgeführt.")
 
-    local actionGrid = vgui.Create("DIconLayout", right)
-    actionGrid:Dock(FILL)
-    actionGrid:DockMargin(10, 0, 10, 10)
+    local actionScroll = vgui.Create("DScrollPanel", right)
+    actionScroll:Dock(FILL)
+    actionScroll:DockMargin(10, 0, 10, 10)
+    local actionGrid = actionScroll:Add("DIconLayout")
+    actionGrid:Dock(TOP)
+    actionGrid:DockMargin(0, 4, 0, 4)
     actionGrid:SetSpaceX(10)
     actionGrid:SetSpaceY(10)
+    actionGrid:SetStretchWidth(true)
+    if IsValid(actionScroll.VBar) then
+      actionScroll.VBar.Paint = function(_, w, h)
+        draw.RoundedBox(8, 0, 0, w, h, Color(20, 20, 26, 150))
+      end
+      actionScroll.VBar.btnGrip.Paint = function(_, w, h)
+        draw.RoundedBox(6, 0, 0, w, h, THEME.accent)
+      end
+    end
 
     local function getSelectedSid()
       local lineID = list:GetSelectedLine()
