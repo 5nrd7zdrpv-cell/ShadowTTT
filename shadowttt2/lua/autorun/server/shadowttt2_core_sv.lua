@@ -4,10 +4,110 @@ print("[ShadowTTT2] MODEL-ENUM SERVER loaded")
 ShadowTTT2 = ShadowTTT2 or {}
 ShadowTTT2.Admins = ShadowTTT2.Admins or { ["STEAM_0:1:15220591"] = true }
 ShadowTTT2.WorkshopPushed = ShadowTTT2.WorkshopPushed or {}
+ShadowTTT2.ModelData = ShadowTTT2.ModelData or {}
 ShadowTTT2.ServerCoreLoaded = true
 
 local function IsAdmin(ply) return IsValid(ply) and ShadowTTT2.Admins[ply:SteamID()] end
 local RECOIL_MULTIPLIER = 0.45
+local MODEL_DATA_PATH = "shadowttt2/playermodels.json"
+local MODEL_CACHE_VERSION = 1
+
+local function ensureDataDir()
+  if not file.Exists("shadowttt2", "DATA") then
+    file.CreateDir("shadowttt2")
+  end
+end
+
+local function loadModelData()
+  ensureDataDir()
+  local raw = file.Exists(MODEL_DATA_PATH, "DATA") and file.Read(MODEL_DATA_PATH, "DATA")
+  local decoded = raw and util.JSONToTable(raw)
+  if istable(decoded) then
+    ShadowTTT2.ModelData.models = decoded.models or {}
+    ShadowTTT2.ModelData.selected = decoded.selected or {}
+    ShadowTTT2.ModelData.version = decoded.version or 0
+  else
+    ShadowTTT2.ModelData.models = {}
+    ShadowTTT2.ModelData.selected = {}
+    ShadowTTT2.ModelData.version = 0
+  end
+
+  ShadowTTT2.ModelData.modelSet = {}
+  for _, mdl in ipairs(ShadowTTT2.ModelData.models) do
+    if util.IsValidModel(mdl) then
+      ShadowTTT2.ModelData.modelSet[mdl] = true
+    end
+  end
+end
+
+local function saveModelData()
+  ensureDataDir()
+  file.Write(MODEL_DATA_PATH, util.TableToJSON({
+    models = ShadowTTT2.ModelData.models or {},
+    selected = ShadowTTT2.ModelData.selected or {},
+    version = MODEL_CACHE_VERSION
+  }, true))
+end
+
+local function rebuildModelList()
+  local set = {}
+
+  if player_manager and player_manager.AllValidModels then
+    local am = player_manager.AllValidModels()
+    if am and table.Count(am) > 0 then
+      for k, v in pairs(am) do
+        if isstring(k) and util.IsValidModel(k) then set[k] = true end
+        if isstring(v) and util.IsValidModel(v) then set[v] = true end
+      end
+    end
+  end
+
+  local lm = list.Get("PlayerOptionsModel")
+  if lm and table.Count(lm) > 0 then
+    for k, v in pairs(lm) do
+      if isstring(k) and util.IsValidModel(k) then set[k] = true end
+      if isstring(v) and util.IsValidModel(v) then set[v] = true end
+      if istable(v) and isstring(v.model) and util.IsValidModel(v.model) then set[v.model] = true end
+    end
+  end
+
+  local function scanModels(dir, depth)
+    if depth <= 0 then return end
+    local files, dirs = file.Find(dir .. "/*", "GAME")
+    for _, f in ipairs(files) do
+      if string.sub(f, -4) == ".mdl" then
+        local path = dir .. "/" .. f
+        if util.IsValidModel(path) then
+          set[path] = true
+        end
+      end
+    end
+    for _, sub in ipairs(dirs) do
+      scanModels(dir .. "/" .. sub, depth - 1)
+    end
+  end
+
+  scanModels("models/player", 4)
+  scanModels("models", 2)
+
+  local list = {}
+  for mdl, _ in pairs(set) do table.insert(list, mdl) end
+  table.sort(list)
+
+  ShadowTTT2.ModelData.models = list
+  ShadowTTT2.ModelData.modelSet = set
+  ShadowTTT2.ModelData.version = MODEL_CACHE_VERSION
+
+  local selected = ShadowTTT2.ModelData.selected or {}
+  for sid, mdl in pairs(selected) do
+    if not set[mdl] then
+      selected[sid] = nil
+    end
+  end
+
+  ShadowTTT2.ModelData.selected = selected
+  saveModelData()
+end
 
 local function ReduceRecoil(wep)
   if not IsValid(wep) then return end
@@ -82,6 +182,8 @@ util.AddNetworkString("ST2_ADMIN_OPEN")
 util.AddNetworkString("ST2_ADMIN_PLAYERLIST")
 util.AddNetworkString("ST2_ADMIN_ACTION")
 util.AddNetworkString("ST2_PS_EQUIP")
+util.AddNetworkString("ST2_PS_MODELS_REQUEST")
+util.AddNetworkString("ST2_PS_MODELS")
 
 local function ShouldInstantHeadshotKill(target, attacker)
   if not IsValid(target) or not target:IsPlayer() or not target:Alive() then return false end
@@ -99,6 +201,48 @@ hook.Add("ScalePlayerDamage", "ST2_HEADSHOT_KILL", function(ply, hitgroup, dmgin
 
   dmginfo:SetDamage(ply:Health() + ply:Armor())
 end)
+
+local function getModelData()
+  if not ShadowTTT2.ModelData.models or ShadowTTT2.ModelData.version ~= MODEL_CACHE_VERSION then
+    loadModelData()
+    if ShadowTTT2.ModelData.version ~= MODEL_CACHE_VERSION then
+      rebuildModelList()
+    end
+  end
+
+  if not ShadowTTT2.ModelData.models or #ShadowTTT2.ModelData.models == 0 then
+    rebuildModelList()
+  end
+
+  return ShadowTTT2.ModelData
+end
+
+local function sendModelSnapshot(ply)
+  if not IsValid(ply) then return end
+
+  local data = getModelData()
+  local models = data.models or {}
+  net.Start("ST2_PS_MODELS")
+    net.WriteUInt(#models, 16)
+    for _, mdl in ipairs(models) do
+      net.WriteString(mdl)
+    end
+    net.WriteString((data.selected and data.selected[ply:SteamID()]) or "")
+  net.Send(ply)
+end
+
+local function applyStoredModel(ply)
+  if not IsValid(ply) then return end
+  local data = getModelData()
+  local mdl = data.selected and data.selected[ply:SteamID()]
+  if not mdl or not data.modelSet or not data.modelSet[mdl] then return end
+
+  timer.Simple(0, function()
+    if IsValid(ply) then
+      ply:SetModel(mdl)
+    end
+  end)
+end
 
 concommand.Add("shadow_admin_open", function(ply)
   if not IsAdmin(ply) then return end
@@ -144,11 +288,36 @@ net.Receive("ST2_ADMIN_PLAYERLIST", function(_, ply)
   net.Send(ply)
 end)
 
+net.Receive("ST2_PS_MODELS_REQUEST", function(_, ply)
+  if not IsValid(ply) then return end
+  sendModelSnapshot(ply)
+end)
+
 net.Receive("ST2_PS_EQUIP", function(_, ply)
   local mdl = net.ReadString()
-  if isstring(mdl) and #mdl < 256 and util.IsValidModel(mdl) then
-    ply:SetModel(mdl)
-  end
+  if not isstring(mdl) or #mdl >= 256 then return end
+
+  local data = getModelData()
+  if not util.IsValidModel(mdl) or not (data.modelSet and data.modelSet[mdl]) then return end
+
+  ply:SetModel(mdl)
+  local sid = ply:SteamID()
+  data.selected = data.selected or {}
+  data.selected[sid] = mdl
+  saveModelData()
+  sendModelSnapshot(ply)
 end)
+
+hook.Add("PlayerInitialSpawn", "ST2_PS_SEND_MODEL_SNAPSHOT", function(ply)
+  timer.Simple(1, function()
+    sendModelSnapshot(ply)
+    applyStoredModel(ply)
+  end)
+end)
+
+hook.Add("PlayerSpawn", "ST2_PS_APPLY_SAVED_MODEL", applyStoredModel)
+
+-- Bootstrap caches on load so model data exists before the first request
+getModelData()
 
 print("[ShadowTTT2] MODEL-ENUM SERVER ready")

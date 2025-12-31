@@ -673,58 +673,109 @@ do -- Admin panel helpers
   net.Receive("ST2_ADMIN_OPEN", openAdminPanel)
 end
 
-local function collect_models()
-  local set = {}
-  -- 1) player_manager.AllValidModels()
-  if player_manager and player_manager.AllValidModels then
-    local am = player_manager.AllValidModels()
-    if am and table.Count(am) > 0 then
-      for k, v in pairs(am) do
-        -- am may be {name=path} or {path=name}; try both
-        if isstring(k) and util.IsValidModel(k) then set[k] = true end
-        if isstring(v) and util.IsValidModel(v) then set[v] = true end
-      end
-    end
-  end
-  -- 2) list.Get("PlayerOptionsModel")
-  local lm = list.Get("PlayerOptionsModel")
-  if lm and table.Count(lm) > 0 then
-    for k, v in pairs(lm) do
-      if isstring(k) and util.IsValidModel(k) then set[k] = true end
-      if isstring(v) and util.IsValidModel(v) then set[v] = true end
-      if istable(v) and isstring(v.model) and util.IsValidModel(v.model) then set[v.model] = true end
-    end
-  end
-  -- 3) fallback: recursively scan player model directories from mounted addons
-  local function addModel(path)
-    if util.IsValidModel(path) then set[path] = true end
+local pointshopState = {
+  models = {},
+  activeModel = "",
+  requestPending = false,
+  openPending = false
+}
+
+local function formatSelectedLabel(mdl, active)
+  if not mdl or mdl == "" then
+    return "Kein Modell ausgewählt"
   end
 
-  local function scanModels(dir, depth)
-    if depth <= 0 then return end
-    local files, dirs = file.Find(dir .. "/*", "GAME")
-    for _, f in ipairs(files) do
-      if string.sub(f, -4) == ".mdl" then
-        addModel(dir .. "/" .. f)
-      end
-    end
-    for _, sub in ipairs(dirs) do
-      scanModels(dir .. "/" .. sub, depth - 1)
-    end
+  if active and active ~= "" and mdl == active then
+    return mdl .. " (aktuell)"
   end
 
-  scanModels("models/player", 4)
-  scanModels("models", 2) -- shallow scan to catch top-level models without recursing endlessly
-
-  -- return sorted list
-  local out = {}
-  for m, _ in pairs(set) do table.insert(out, m) end
-  table.sort(out)
-  return out, set
+  return mdl
 end
 
-local function openPointshop(models)
+local function refreshPointshopList(ui, filter)
+  if not IsValid(ui.list) then return end
+  ui.list:Clear()
+
+  local q = string.Trim(string.lower(filter or ""))
+  local visible = 0
+  for _, m in ipairs(ui.models or {}) do
+    if q == "" or string.find(string.lower(m), q, 1, true) then
+      local line = ui.list:AddLine(m)
+      if IsValid(line) then
+        if line.SetTextColor then
+          line:SetTextColor(m == ui.activeModel and THEME.accent_soft or THEME.text)
+        else
+          for _, col in ipairs(line.Columns or {}) do
+            if IsValid(col) and col.SetTextColor then
+              col:SetTextColor(m == ui.activeModel and THEME.accent_soft or THEME.text)
+            end
+          end
+        end
+        line.ShadowModelPath = m
+        line.Paint = function(self, w, h)
+          local bg = self:IsLineSelected() and THEME.accent or Color(255, 255, 255, 6)
+          if m == ui.activeModel then
+            bg = self:IsLineSelected() and THEME.accent or Color(120, 200, 255, 24)
+          end
+          draw.RoundedBox(0, 0, 0, w, h, bg)
+        end
+      end
+      visible = visible + 1
+    end
+  end
+
+  if IsValid(ui.counter) then
+    ui.counter:SetText(string.format("%d / %d Modelle sichtbar", visible, #(ui.models or {})))
+  end
+end
+
+local function selectModel(ui, mdl)
+  if not mdl or mdl == "" then return end
+  if IsValid(ui.preview) then
+    ui.preview:SetModel(mdl)
+  end
+  if IsValid(ui.selectedLabel) then
+    ui.selectedLabel:SetText(formatSelectedLabel(mdl, ui.activeModel))
+  end
+  if IsValid(ui.equipButton) then
+    ui.equipButton.DoClick = function()
+      net.Start("ST2_PS_EQUIP")
+      net.WriteString(mdl)
+      net.SendToServer()
+    end
+  end
+  ui.currentModel = mdl
+end
+
+local function applyPointshopData(ui, models, activeModel)
+  ui.models = models or {}
+  ui.activeModel = activeModel or ""
+  local searchText = IsValid(ui.search) and ui.search:GetText() or ""
+  refreshPointshopList(ui, searchText)
+
+  local function selectActiveOrFirst()
+    if ui.activeModel and ui.activeModel ~= "" then
+      for i = 1, ui.list:GetLineCount() do
+        local line = ui.list:GetLine(i)
+        if IsValid(line) and line:GetColumnText(1) == ui.activeModel then
+          ui.list:SelectItem(line)
+          return
+        end
+      end
+    end
+    if ui.list:GetLineCount() > 0 then
+      ui.list:SelectFirstItem()
+    end
+  end
+
+  selectActiveOrFirst()
+end
+
+local function openPointshop(models, activeModel)
   if IsValid(activePointshopFrame) then
+    if activePointshopFrame.ShadowPointshopUI then
+      applyPointshopData(activePointshopFrame.ShadowPointshopUI, models, activeModel)
+    end
     activePointshopFrame:MakePopup()
     activePointshopFrame:RequestFocus()
     return
@@ -840,72 +891,62 @@ local function openPointshop(models)
   selected:SetTextColor(THEME.muted)
   selected:SetText("Kein Modell ausgewählt")
 
-  local function selectModel(mdl)
-    if not mdl then return end
-    preview:SetModel(mdl)
-    selected:SetText(mdl)
-    equip.DoClick = function()
-      net.Start("ST2_PS_EQUIP")
-      net.WriteString(mdl)
-      net.SendToServer()
-    end
-  end
-
-  local function refreshList(filter)
-    listv:Clear()
-    local q = string.Trim(string.lower(filter or ""))
-    local visible = 0
-    for _, m in ipairs(models) do
-      if q == "" or string.find(string.lower(m), q, 1, true) then
-        local line = listv:AddLine(m)
-        if IsValid(line) then
-          if line.SetTextColor then
-            line:SetTextColor(THEME.text)
-          else
-            for _, col in ipairs(line.Columns or {}) do
-              if IsValid(col) and col.SetTextColor then
-                col:SetTextColor(THEME.text)
-              end
-            end
-          end
-          line.Paint = function(self, w, h)
-            local bg = self:IsLineSelected() and THEME.accent or Color(255, 255, 255, 6)
-            draw.RoundedBox(0, 0, 0, w, h, bg)
-          end
-        end
-        visible = visible + 1
-      end
-    end
-    counter:SetText(string.format("%d / %d Modelle sichtbar", visible, #models))
-  end
+  local ui = {
+    list = listv,
+    search = search,
+    counter = counter,
+    preview = preview,
+    equipButton = equip,
+    selectedLabel = selected,
+    models = models or {},
+    activeModel = activeModel or "",
+    currentModel = nil
+  }
 
   listv.OnRowSelected = function(_, _, line)
-    selectModel(line:GetColumnText(1))
+    selectModel(ui, line:GetColumnText(1))
   end
 
   search.OnValueChange = function(_, value)
-    refreshList(value)
+    refreshPointshopList(ui, value)
   end
 
-  refreshList("")
-  listv:SelectFirstItem()
+  activePointshopFrame.ShadowPointshopUI = ui
+  applyPointshopData(ui, models, activeModel)
 end
 
 hook.Add("PlayerButtonDown", "ST2_F3_POINTSHOP_FINAL", function(_, key)
   if key ~= KEY_F3 then return end
 
-  timer.Simple(0.1, function()
-    local models = collect_models()
-    print("[ShadowTTT2] Found models count:", #models)
+  if pointshopState.requestPending then return end
+  pointshopState.requestPending = true
+  pointshopState.openPending = true
+  net.Start("ST2_PS_MODELS_REQUEST")
+  net.SendToServer()
+end)
+
+net.Receive("ST2_PS_MODELS", function()
+  local count = net.ReadUInt(16)
+  local models = {}
+  for i = 1, count do
+    models[i] = net.ReadString()
+  end
+
+  local activeModel = net.ReadString() or ""
+  pointshopState.requestPending = false
+  pointshopState.models = models
+  pointshopState.activeModel = activeModel
+
+  if IsValid(activePointshopFrame) and activePointshopFrame.ShadowPointshopUI then
+    applyPointshopData(activePointshopFrame.ShadowPointshopUI, models, activeModel)
+  end
+
+  if pointshopState.openPending then
+    pointshopState.openPending = false
     if #models == 0 then
-      local am = (player_manager and player_manager.AllValidModels and table.Count(player_manager.AllValidModels())) or 0
-      local lm = (list.Get and table.Count(list.Get("PlayerOptionsModel") or {})) or 0
-      print("[ShadowTTT2] DEBUG: player_manager.AllValidModels count:", am)
-      print("[ShadowTTT2] DEBUG: list.Get('PlayerOptionsModel') count:", lm)
-      chat.AddText(Color(200, 60, 60), "ShadowTTT2 Pointshop: no models found clientside. See console for details.")
+      chat.AddText(Color(200, 60, 60), "ShadowTTT2 Pointshop: keine serverseitig gespeicherten Modelle gefunden.")
       return
     end
-
-    openPointshop(models)
-  end)
+    openPointshop(models, activeModel)
+  end
 end)
