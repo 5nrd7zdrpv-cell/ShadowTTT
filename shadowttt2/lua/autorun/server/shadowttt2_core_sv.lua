@@ -11,6 +11,18 @@ local function IsAdmin(ply) return IsValid(ply) and ShadowTTT2.Admins[ply:SteamI
 local RECOIL_MULTIPLIER = 0.45
 local MODEL_DATA_PATH = "shadowttt2/playermodels.json"
 local MODEL_CACHE_VERSION = 1
+-- These models spam AE_CL_PLAYSOUND errors because their animations reference empty sound names.
+local BLACKLISTED_MODELS = {
+  ["models/alyx.mdl"] = true,
+  ["models/alyx_ep2.mdl"] = true,
+  ["models/alyx_interior.mdl"] = true
+}
+
+local function isModelAllowed(mdl)
+  if not isstring(mdl) then return false end
+  if BLACKLISTED_MODELS[string.lower(mdl)] then return false end
+  return util.IsValidModel(mdl)
+end
 
 local function ensureDataDir()
   if not file.Exists("shadowttt2", "DATA") then
@@ -33,11 +45,22 @@ local function loadModelData()
   end
 
   ShadowTTT2.ModelData.modelSet = {}
+  local filtered = {}
   for _, mdl in ipairs(ShadowTTT2.ModelData.models) do
-    if util.IsValidModel(mdl) then
+    if isModelAllowed(mdl) then
+      table.insert(filtered, mdl)
       ShadowTTT2.ModelData.modelSet[mdl] = true
     end
   end
+  ShadowTTT2.ModelData.models = filtered
+
+  local selected = ShadowTTT2.ModelData.selected or {}
+  for sid, mdl in pairs(selected) do
+    if not ShadowTTT2.ModelData.modelSet[mdl] then
+      selected[sid] = nil
+    end
+  end
+  ShadowTTT2.ModelData.selected = selected
 end
 
 local function saveModelData()
@@ -56,8 +79,8 @@ local function rebuildModelList()
     local am = player_manager.AllValidModels()
     if am and table.Count(am) > 0 then
       for k, v in pairs(am) do
-        if isstring(k) and util.IsValidModel(k) then set[k] = true end
-        if isstring(v) and util.IsValidModel(v) then set[v] = true end
+        if isstring(k) and isModelAllowed(k) then set[k] = true end
+        if isstring(v) and isModelAllowed(v) then set[v] = true end
       end
     end
   end
@@ -65,9 +88,9 @@ local function rebuildModelList()
   local lm = list.Get("PlayerOptionsModel")
   if lm and table.Count(lm) > 0 then
     for k, v in pairs(lm) do
-      if isstring(k) and util.IsValidModel(k) then set[k] = true end
-      if isstring(v) and util.IsValidModel(v) then set[v] = true end
-      if istable(v) and isstring(v.model) and util.IsValidModel(v.model) then set[v.model] = true end
+      if isstring(k) and isModelAllowed(k) then set[k] = true end
+      if isstring(v) and isModelAllowed(v) then set[v] = true end
+      if istable(v) and isstring(v.model) and isModelAllowed(v.model) then set[v.model] = true end
     end
   end
 
@@ -77,7 +100,7 @@ local function rebuildModelList()
     for _, f in ipairs(files) do
       if string.sub(f, -4) == ".mdl" then
         local path = dir .. "/" .. f
-        if util.IsValidModel(path) then
+        if isModelAllowed(path) then
           set[path] = true
         end
       end
