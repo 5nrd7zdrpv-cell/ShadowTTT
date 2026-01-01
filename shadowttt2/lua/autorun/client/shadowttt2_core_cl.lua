@@ -18,12 +18,14 @@ local THEME = {
 local SLOT_MIN_BET = 5
 local SLOT_MAX_BET = 1000
 local MODEL_PRICE_DEFAULT = 100
+local SLOT_FALLBACK_ICONS = {"🍒", "🍋", "🔔", "⭐", "💎", "7", "BAR"}
 
 surface.CreateFont("ST2.Title", {font = "Roboto", size = 24, weight = 800})
 surface.CreateFont("ST2.Subtitle", {font = "Roboto", size = 18, weight = 600})
 surface.CreateFont("ST2.Body", {font = "Roboto", size = 16, weight = 500})
 surface.CreateFont("ST2.Button", {font = "Roboto", size = 17, weight = 700})
 surface.CreateFont("ST2.Mono", {font = "Consolas", size = 15, weight = 500})
+surface.CreateFont("ST2.SlotReel", {font = "Roboto", size = 44, weight = 800})
 
 local function styleButton(btn)
   btn:SetFont("ST2.Button")
@@ -1824,20 +1826,21 @@ end
 
 local function showSlotResult(ui, symbols, text, payout)
   if not ui then return end
+  local fallbackIcon = function()
+    return SLOT_FALLBACK_ICONS[math.random(#SLOT_FALLBACK_ICONS)] or "?"
+  end
+
   if IsValid(ui.slotResult) then
     ui.slotResult:SetText(text or "")
     ui.slotResult:SetTextColor((payout or 0) > 0 and THEME.accent_soft or THEME.muted)
   end
 
-  if IsValid(ui.slotSymbols) then
-    if istable(symbols) and #symbols > 0 then
-      local icons = {}
-      for _, sym in ipairs(symbols) do
-        icons[#icons + 1] = sym.icon or sym.id or "?"
-      end
-      ui.slotSymbols:SetText(table.concat(icons, "  "))
-    else
-      ui.slotSymbols:SetText("⏳")
+  if istable(ui.slotReels) then
+    for i = 1, 3 do
+      local lbl = ui.slotReels[i]
+      if not IsValid(lbl) then continue end
+      local sym = istable(symbols) and symbols[i] or nil
+      lbl:SetText(sym and (sym.icon or sym.id or "?") or fallbackIcon())
     end
   end
 end
@@ -1999,243 +2002,319 @@ local function openPointshop(models, activeModel, defaultPrice)
     draw.RoundedBox(12, 0, 0, w, h, Color(26, 26, 34, 230))
   end
 
-  local left = vgui.Create("DPanel", container)
-  left:Dock(LEFT)
-  left:SetWide(430)
-  left:DockMargin(12, 12, 8, 12)
-  left.Paint = function(_, w, h)
-    draw.RoundedBox(10, 0, 0, w, h, Color(34, 34, 44, 230))
+  local sheets = vgui.Create("DPropertySheet", container)
+  sheets:Dock(FILL)
+  sheets:SetFadeTime(0)
+  sheets.Paint = function(_, w, h)
+    draw.RoundedBox(10, 8, 4, w - 16, h - 12, Color(20, 20, 26, 200))
+  end
+  function sheets:PaintTab(tab, w, h)
+    local active = self:GetActiveTab() == tab
+    local col = active and THEME.accent_soft or Color(40, 40, 52, 200)
+    draw.RoundedBox(8, 0, 0, w, h, col)
+    draw.SimpleText(tab:GetText(), "ST2.Body", 12, h / 2, color_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
   end
 
-  local search = vgui.Create("DTextEntry", left)
-  search:Dock(TOP)
-  search:DockMargin(10, 10, 10, 8)
-  search:SetTall(32)
-  search:SetFont("ST2.Body")
-  search:SetTextColor(THEME.text)
-  search:SetPlaceholderText("Suche nach Modellpfad...")
-  search.Paint = function(self, w, h)
-    draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
-    self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
-  end
+  local function buildModelTab()
+    local panel = vgui.Create("DPanel", sheets)
+    panel:Dock(FILL)
+    panel.Paint = function(_, w, h)
+      draw.RoundedBox(10, 0, 0, w, h, Color(26, 26, 34, 230))
+    end
 
-  local listv = vgui.Create("DListView", left)
-  listv:Dock(FILL)
-  listv:DockMargin(10, 0, 10, 10)
-  listv:AddColumn("Model")
-  listv:AddColumn("Preis")
-  if listv.SetDataHeight then listv:SetDataHeight(26) end
-  if listv.SetHeaderHeight then listv:SetHeaderHeight(30) end
-  listv.Paint = function(_, w, h)
-    draw.RoundedBox(10, 0, 0, w, h, THEME.panel)
-  end
-  for _, col in ipairs(listv.Columns or {}) do
-    if IsValid(col.Header) then
-      col.Header:SetFont("ST2.Subtitle")
-      col.Header:SetTextColor(THEME.text)
-      col.Header.Paint = function(_, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(38, 38, 46, 240))
+    local left = vgui.Create("DPanel", panel)
+    left:Dock(LEFT)
+    left:SetWide(430)
+    left:DockMargin(12, 12, 8, 12)
+    left.Paint = function(_, w, h)
+      draw.RoundedBox(10, 0, 0, w, h, Color(34, 34, 44, 230))
+    end
+
+    local search = vgui.Create("DTextEntry", left)
+    search:Dock(TOP)
+    search:DockMargin(10, 10, 10, 8)
+    search:SetTall(32)
+    search:SetFont("ST2.Body")
+    search:SetTextColor(THEME.text)
+    search:SetPlaceholderText("Suche nach Modellpfad...")
+    search.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
+    end
+
+    local listv = vgui.Create("DListView", left)
+    listv:Dock(FILL)
+    listv:DockMargin(10, 0, 10, 10)
+    listv:AddColumn("Model")
+    listv:AddColumn("Preis")
+    if listv.SetDataHeight then listv:SetDataHeight(26) end
+    if listv.SetHeaderHeight then listv:SetHeaderHeight(30) end
+    listv.Paint = function(_, w, h)
+      draw.RoundedBox(10, 0, 0, w, h, THEME.panel)
+    end
+    for _, col in ipairs(listv.Columns or {}) do
+      if IsValid(col.Header) then
+        col.Header:SetFont("ST2.Subtitle")
+        col.Header:SetTextColor(THEME.text)
+        col.Header.Paint = function(_, w, h)
+          draw.RoundedBox(0, 0, 0, w, h, Color(38, 38, 46, 240))
+        end
       end
+    end
+
+    local counter = vgui.Create("DLabel", left)
+    counter:Dock(BOTTOM)
+    counter:DockMargin(10, 0, 10, 12)
+    counter:SetTall(20)
+    counter:SetFont("ST2.Body")
+    counter:SetTextColor(THEME.muted)
+
+    local right = vgui.Create("DPanel", panel)
+    right:Dock(FILL)
+    right:DockMargin(8, 12, 12, 12)
+    right.Paint = function(_, w, h)
+      draw.RoundedBox(10, 0, 0, w, h, Color(34, 34, 44, 230))
+    end
+
+    local pointsBar = vgui.Create("DPanel", right)
+    pointsBar:Dock(TOP)
+    pointsBar:SetTall(38)
+    pointsBar:DockMargin(10, 10, 10, 0)
+    pointsBar.Paint = function(_, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(28, 28, 36, 220))
+    end
+
+    local pointsLabel = vgui.Create("DLabel", pointsBar)
+    pointsLabel:Dock(LEFT)
+    pointsLabel:DockMargin(8, 8, 8, 8)
+    pointsLabel:SetFont("ST2.Subtitle")
+    pointsLabel:SetTextColor(THEME.text)
+    pointsLabel:SetText("Punkte: lädt...")
+
+    local refreshPoints = vgui.Create("DButton", pointsBar)
+    refreshPoints:Dock(RIGHT)
+    refreshPoints:DockMargin(8, 6, 8, 6)
+    refreshPoints:SetWide(160)
+    refreshPoints:SetText("Punkte aktualisieren")
+    styleButton(refreshPoints)
+    refreshPoints.DoClick = function()
+      requestPointsBalance()
+    end
+
+    local previewTitle = vgui.Create("DLabel", right)
+    previewTitle:Dock(TOP)
+    previewTitle:DockMargin(10, 8, 10, 6)
+    previewTitle:SetFont("ST2.Subtitle")
+    previewTitle:SetTextColor(THEME.text)
+    previewTitle:SetText("Vorschau")
+
+    local preview = vgui.Create("DModelPanel", right)
+    preview:Dock(FILL)
+    preview:DockMargin(10, 0, 10, 10)
+    preview:SetFOV(40)
+    preview:SetCamPos(Vector(90, 0, 64))
+    preview:SetLookAt(Vector(0, 0, 60))
+    preview:SetDirectionalLight(BOX_TOP, Color(255, 255, 255))
+    preview:SetDirectionalLight(BOX_FRONT, Color(180, 200, 255))
+    preview.LayoutEntity = function(self, ent)
+      self:RunAnimation()
+      ent:SetAngles(Angle(0, CurTime() * 20 % 360, 0))
+    end
+
+    local equip = vgui.Create("DButton", right)
+    equip:Dock(BOTTOM)
+    equip:DockMargin(10, 0, 10, 12)
+    equip:SetTall(42)
+    equip:SetText("Modell auswählen")
+    styleButton(equip)
+
+    local priceLabel = vgui.Create("DLabel", right)
+    priceLabel:Dock(BOTTOM)
+    priceLabel:DockMargin(10, 0, 10, 6)
+    priceLabel:SetTall(18)
+    priceLabel:SetFont("ST2.Body")
+    priceLabel:SetTextColor(THEME.muted)
+    priceLabel:SetText("Preis: lädt...")
+
+    local selected = vgui.Create("DLabel", right)
+    selected:Dock(BOTTOM)
+    selected:DockMargin(10, 0, 10, 6)
+    selected:SetTall(20)
+    selected:SetFont("ST2.Mono")
+    selected:SetTextColor(THEME.muted)
+    selected:SetText("Kein Modell ausgewählt")
+
+    return panel, {
+      list = listv,
+      search = search,
+      counter = counter,
+      preview = preview,
+      equipButton = equip,
+      priceLabel = priceLabel,
+      selectedLabel = selected,
+      pointsLabel = pointsLabel,
+    }
+  end
+
+  local function buildSlotsTab()
+    local panel = vgui.Create("DPanel", sheets)
+    panel:Dock(FILL)
+    panel.Paint = function(_, w, h)
+      draw.RoundedBox(10, 0, 0, w, h, Color(30, 30, 40, 230))
+    end
+
+    local title = vgui.Create("DLabel", panel)
+    title:Dock(TOP)
+    title:DockMargin(12, 12, 12, 2)
+    title:SetFont("ST2.Title")
+    title:SetTextColor(THEME.text)
+    title:SetText("Casino Slots")
+
+    local subtitle = vgui.Create("DLabel", panel)
+    subtitle:Dock(TOP)
+    subtitle:DockMargin(12, 0, 12, 10)
+    subtitle:SetTall(36)
+    subtitle:SetWrap(true)
+    subtitle:SetFont("ST2.Body")
+    subtitle:SetTextColor(THEME.muted)
+    subtitle:SetText(string.format("Drei Walzen im Blick: setze zwischen %d und %d Punkten. Bis zu 12x Gewinn möglich, gönn dir eine Runde!", SLOT_MIN_BET, SLOT_MAX_BET))
+
+    local balance = vgui.Create("DLabel", panel)
+    balance:Dock(TOP)
+    balance:DockMargin(12, 0, 12, 8)
+    balance:SetFont("ST2.Mono")
+    balance:SetTextColor(THEME.text)
+    balance:SetText("Aktueller Kontostand: lädt...")
+
+    local reels = vgui.Create("DPanel", panel)
+    reels:Dock(TOP)
+    reels:DockMargin(12, 0, 12, 10)
+    reels:SetTall(140)
+    reels.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(22, 22, 30, 220))
+    end
+
+    local reelLayout = vgui.Create("DIconLayout", reels)
+    reelLayout:Dock(FILL)
+    reelLayout:SetSpaceX(12)
+    reelLayout:SetSpaceY(0)
+    reelLayout:DockMargin(12, 12, 12, 12)
+
+    local reelLabels = {}
+    for i = 1, 3 do
+      local slotBox = reelLayout:Add("DPanel")
+      slotBox:SetSize(150, 108)
+      slotBox.Paint = function(_, w, h)
+        draw.RoundedBox(10, 0, 0, w, h, Color(40, 44, 56, 240))
+      end
+
+      local lbl = vgui.Create("DLabel", slotBox)
+      lbl:Dock(FILL)
+      lbl:SetFont("ST2.SlotReel")
+      lbl:SetTextColor(color_white)
+      lbl:SetContentAlignment(5)
+      lbl:SetText(SLOT_FALLBACK_ICONS[i] or "⏳")
+      reelLabels[i] = lbl
+    end
+
+    local reelHint = vgui.Create("DLabel", panel)
+    reelHint:Dock(TOP)
+    reelHint:DockMargin(12, 0, 12, 8)
+    reelHint:SetFont("ST2.Body")
+    reelHint:SetTextColor(THEME.muted)
+    reelHint:SetText("3 Symbole gleichzeitig sichtbar – Auszahlungen bis 12x bei Kombinationen.")
+
+    local betRow = vgui.Create("DPanel", panel)
+    betRow:Dock(TOP)
+    betRow:DockMargin(12, 0, 12, 6)
+    betRow:SetTall(40)
+    betRow.Paint = function(_, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(24, 24, 32, 220))
+    end
+
+    local betEntry = vgui.Create("DNumberWang", betRow)
+    betEntry:Dock(LEFT)
+    betEntry:DockMargin(10, 7, 6, 7)
+    betEntry:SetWide(180)
+    betEntry:SetMin(SLOT_MIN_BET)
+    betEntry:SetMax(SLOT_MAX_BET)
+    betEntry:SetValue(math.floor((SLOT_MIN_BET + SLOT_MAX_BET) / 2))
+    betEntry:SetDecimals(0)
+    betEntry:SetFont("ST2.Body")
+
+    local spinButton = vgui.Create("DButton", betRow)
+    spinButton:Dock(RIGHT)
+    spinButton:DockMargin(6, 6, 10, 6)
+    spinButton:SetWide(200)
+    spinButton:SetText("Spin!")
+    styleButton(spinButton)
+
+    local result = vgui.Create("DLabel", panel)
+    result:Dock(TOP)
+    result:DockMargin(12, 4, 12, 2)
+    result:SetFont("ST2.Body")
+    result:SetTextColor(THEME.muted)
+    result:SetText("Hol dir dein Glück...")
+
+    local odds = vgui.Create("DLabel", panel)
+    odds:Dock(TOP)
+    odds:DockMargin(12, 0, 12, 6)
+    odds:SetFont("ST2.Body")
+    odds:SetTextColor(THEME.muted)
+    odds:SetText("Tipp: Höhere Einsätze bedeuten auch höhere Gewinne – aber die Walzen bleiben fair.")
+
+    return panel, {
+      slotBalance = balance,
+      slotResult = result,
+      slotReels = reelLabels,
+      betEntry = betEntry,
+      spinButton = spinButton,
+    }
+  end
+
+  local modelPanel, modelUi = buildModelTab()
+  sheets:AddSheet("Modelle", modelPanel, "icon16/user_gray.png")
+
+  local slotsPanel, slotUi = buildSlotsTab()
+  sheets:AddSheet("Casino", slotsPanel, "icon16/coins.png")
+
+  local ui = {}
+  for k, v in pairs(modelUi) do ui[k] = v end
+  for k, v in pairs(slotUi) do ui[k] = v end
+  ui.models = models or {}
+  ui.activeModel = activeModel or ""
+  ui.currentModel = nil
+  ui.currentPrice = nil
+  ui.defaultPrice = defaultPrice or pointshopState.defaultPrice or MODEL_PRICE_DEFAULT
+
+  if IsValid(ui.spinButton) then
+    ui.spinButton.DoClick = function()
+      if pointshopState.spinPending then return end
+      local bet = math.floor(tonumber(ui.betEntry:GetValue()) or SLOT_MIN_BET)
+      bet = math.Clamp(bet, SLOT_MIN_BET, SLOT_MAX_BET)
+      ui.betEntry:SetValue(bet)
+
+      pointshopState.spinPending = true
+      ui.spinButton:SetEnabled(false)
+      ui.spinButton:SetText("Dreht...")
+      showSlotResult(ui, nil, "Räder drehen...", 0)
+
+      net.Start("ST2_POINTS_SPIN")
+      net.WriteUInt(bet, 16)
+      net.SendToServer()
     end
   end
 
-  local counter = vgui.Create("DLabel", left)
-  counter:Dock(BOTTOM)
-  counter:DockMargin(10, 0, 10, 12)
-  counter:SetTall(20)
-  counter:SetFont("ST2.Body")
-  counter:SetTextColor(THEME.muted)
-
-  local right = vgui.Create("DPanel", container)
-  right:Dock(FILL)
-  right:DockMargin(8, 12, 12, 12)
-  right.Paint = function(_, w, h)
-    draw.RoundedBox(10, 0, 0, w, h, Color(34, 34, 44, 230))
+  if IsValid(modelUi.list) then
+    modelUi.list.OnRowSelected = function(_, _, line)
+      selectModel(ui, line:GetColumnText(1), line.ShadowModelPrice or ui.defaultPrice)
+    end
   end
 
-  local pointsBar = vgui.Create("DPanel", right)
-  pointsBar:Dock(TOP)
-  pointsBar:SetTall(38)
-  pointsBar:DockMargin(10, 10, 10, 0)
-  pointsBar.Paint = function(_, w, h)
-    draw.RoundedBox(8, 0, 0, w, h, Color(28, 28, 36, 220))
-  end
-
-  local pointsLabel = vgui.Create("DLabel", pointsBar)
-  pointsLabel:Dock(LEFT)
-  pointsLabel:DockMargin(8, 8, 8, 8)
-  pointsLabel:SetFont("ST2.Subtitle")
-  pointsLabel:SetTextColor(THEME.text)
-  pointsLabel:SetText("Punkte: lädt...")
-
-  local refreshPoints = vgui.Create("DButton", pointsBar)
-  refreshPoints:Dock(RIGHT)
-  refreshPoints:DockMargin(8, 6, 8, 6)
-  refreshPoints:SetWide(160)
-  refreshPoints:SetText("Punkte aktualisieren")
-  styleButton(refreshPoints)
-  refreshPoints.DoClick = function()
-    requestPointsBalance()
-  end
-
-  local previewTitle = vgui.Create("DLabel", right)
-  previewTitle:Dock(TOP)
-  previewTitle:DockMargin(10, 8, 10, 6)
-  previewTitle:SetFont("ST2.Subtitle")
-  previewTitle:SetTextColor(THEME.text)
-  previewTitle:SetText("Vorschau")
-
-  local preview = vgui.Create("DModelPanel", right)
-  preview:Dock(FILL)
-  preview:DockMargin(10, 0, 10, 10)
-  preview:SetFOV(40)
-  preview:SetCamPos(Vector(90, 0, 64))
-  preview:SetLookAt(Vector(0, 0, 60))
-  preview:SetDirectionalLight(BOX_TOP, Color(255, 255, 255))
-  preview:SetDirectionalLight(BOX_FRONT, Color(180, 200, 255))
-  preview.LayoutEntity = function(self, ent)
-    self:RunAnimation()
-    ent:SetAngles(Angle(0, CurTime() * 20 % 360, 0))
-  end
-
-  local slotPanel = vgui.Create("DPanel", right)
-  slotPanel:Dock(BOTTOM)
-  slotPanel:DockMargin(10, 0, 10, 6)
-  slotPanel:SetTall(190)
-  slotPanel.Paint = function(_, w, h)
-    draw.RoundedBox(10, 0, 0, w, h, Color(32, 32, 42, 230))
-  end
-
-  local slotTitle = vgui.Create("DLabel", slotPanel)
-  slotTitle:Dock(TOP)
-  slotTitle:DockMargin(10, 10, 10, 2)
-  slotTitle:SetFont("ST2.Subtitle")
-  slotTitle:SetTextColor(THEME.text)
-  slotTitle:SetText("Casino Slots")
-
-  local slotHint = vgui.Create("DLabel", slotPanel)
-  slotHint:Dock(TOP)
-  slotHint:DockMargin(10, 0, 10, 6)
-  slotHint:SetFont("ST2.Body")
-  slotHint:SetTextColor(THEME.muted)
-  slotHint:SetTall(34)
-  slotHint:SetWrap(true)
-  slotHint:SetText(string.format("Setze zwischen %d und %d Punkten und gewinne bis zu 12x zurück.", SLOT_MIN_BET, SLOT_MAX_BET))
-
-  local slotBalance = vgui.Create("DLabel", slotPanel)
-  slotBalance:Dock(TOP)
-  slotBalance:DockMargin(10, 0, 10, 4)
-  slotBalance:SetFont("ST2.Mono")
-  slotBalance:SetTextColor(THEME.text)
-  slotBalance:SetText("Aktueller Kontostand: lädt...")
-
-  local slotRow = vgui.Create("DPanel", slotPanel)
-  slotRow:Dock(TOP)
-  slotRow:DockMargin(10, 2, 10, 4)
-  slotRow:SetTall(36)
-  slotRow.Paint = function(_, w, h)
-    draw.RoundedBox(8, 0, 0, w, h, Color(24, 24, 32, 220))
-  end
-
-  local betEntry = vgui.Create("DNumberWang", slotRow)
-  betEntry:Dock(LEFT)
-  betEntry:DockMargin(10, 6, 6, 6)
-  betEntry:SetWide(140)
-  betEntry:SetMin(SLOT_MIN_BET)
-  betEntry:SetMax(SLOT_MAX_BET)
-  betEntry:SetValue(math.floor((SLOT_MIN_BET + SLOT_MAX_BET) / 2))
-  betEntry:SetDecimals(0)
-  betEntry:SetFont("ST2.Body")
-
-  local spinButton = vgui.Create("DButton", slotRow)
-  spinButton:Dock(RIGHT)
-  spinButton:DockMargin(6, 6, 10, 6)
-  spinButton:SetWide(160)
-  spinButton:SetText("Spin!")
-  styleButton(spinButton)
-
-  local slotResult = vgui.Create("DLabel", slotPanel)
-  slotResult:Dock(TOP)
-  slotResult:DockMargin(10, 4, 10, 2)
-  slotResult:SetFont("ST2.Body")
-  slotResult:SetTextColor(THEME.muted)
-  slotResult:SetTall(20)
-  slotResult:SetText("Hol dir dein Glück... ")
-
-  local slotSymbols = vgui.Create("DLabel", slotPanel)
-  slotSymbols:Dock(TOP)
-  slotSymbols:DockMargin(10, 2, 10, 8)
-  slotSymbols:SetFont("ST2.Title")
-  slotSymbols:SetTextColor(THEME.text)
-  slotSymbols:SetTall(36)
-  slotSymbols:SetText("⏳")
-
-  local equip = vgui.Create("DButton", right)
-  equip:Dock(BOTTOM)
-  equip:DockMargin(10, 0, 10, 12)
-  equip:SetTall(42)
-  equip:SetText("Modell auswählen")
-  styleButton(equip)
-
-  local priceLabel = vgui.Create("DLabel", right)
-  priceLabel:Dock(BOTTOM)
-  priceLabel:DockMargin(10, 0, 10, 6)
-  priceLabel:SetTall(18)
-  priceLabel:SetFont("ST2.Body")
-  priceLabel:SetTextColor(THEME.muted)
-  priceLabel:SetText("Preis: lädt...")
-
-  local selected = vgui.Create("DLabel", right)
-  selected:Dock(BOTTOM)
-  selected:DockMargin(10, 0, 10, 6)
-  selected:SetTall(20)
-  selected:SetFont("ST2.Mono")
-  selected:SetTextColor(THEME.muted)
-  selected:SetText("Kein Modell ausgewählt")
-
-  local ui = {
-    list = listv,
-    search = search,
-    counter = counter,
-    preview = preview,
-    equipButton = equip,
-    priceLabel = priceLabel,
-    selectedLabel = selected,
-    pointsLabel = pointsLabel,
-    slotResult = slotResult,
-    slotSymbols = slotSymbols,
-    slotBalance = slotBalance,
-    spinButton = spinButton,
-    betEntry = betEntry,
-    models = models or {},
-    activeModel = activeModel or "",
-    currentModel = nil,
-    currentPrice = nil,
-    defaultPrice = defaultPrice or pointshopState.defaultPrice or MODEL_PRICE_DEFAULT
-  }
-
-  spinButton.DoClick = function()
-    if pointshopState.spinPending then return end
-    local bet = math.floor(tonumber(betEntry:GetValue()) or SLOT_MIN_BET)
-    bet = math.Clamp(bet, SLOT_MIN_BET, SLOT_MAX_BET)
-    betEntry:SetValue(bet)
-
-    pointshopState.spinPending = true
-    spinButton:SetEnabled(false)
-    spinButton:SetText("Dreht...")
-    showSlotResult(ui, nil, "Räder drehen...", 0)
-
-    net.Start("ST2_POINTS_SPIN")
-    net.WriteUInt(bet, 16)
-    net.SendToServer()
-  end
-
-  listv.OnRowSelected = function(_, _, line)
-    selectModel(ui, line:GetColumnText(1), line.ShadowModelPrice or ui.defaultPrice)
-  end
-
-  search.OnValueChange = function(_, value)
-    refreshPointshopList(ui, value)
+  if IsValid(modelUi.search) then
+    modelUi.search.OnValueChange = function(_, value)
+      refreshPointshopList(ui, value)
+    end
   end
 
   activePointshopFrame.ShadowPointshopUI = ui
