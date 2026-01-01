@@ -8,7 +8,16 @@ ShadowTTT2.ModelData = ShadowTTT2.ModelData or {}
 ShadowTTT2.ServerCoreLoaded = true
 
 local function IsAdmin(ply) return IsValid(ply) and ShadowTTT2.Admins[ply:SteamID()] end
-local RECOIL_MULTIPLIER = 0.45
+local RECOIL_MULTIPLIER_DEFAULT = 0.35
+local function clampRecoilMultiplier(value)
+  if not isnumber(value) then return RECOIL_MULTIPLIER_DEFAULT end
+  return math.Clamp(value, 0, 1)
+end
+local recoilMultiplierConVar = CreateConVar("st2_recoil_mult", tostring(RECOIL_MULTIPLIER_DEFAULT), {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "ShadowTTT2 recoil multiplier (0-1).")
+local function getRecoilMultiplier()
+  if not recoilMultiplierConVar then return RECOIL_MULTIPLIER_DEFAULT end
+  return clampRecoilMultiplier(recoilMultiplierConVar:GetFloat())
+end
 local MODEL_DATA_PATH = "shadowttt2/playermodels.json"
 local MODEL_CACHE_VERSION = 1
 -- These models spam AE_CL_PLAYSOUND errors because their animations reference empty sound names.
@@ -138,16 +147,36 @@ local function rebuildModelList()
   saveModelData()
 end
 
-local function ReduceRecoil(wep)
+local function ReduceRecoil(wep, multiplier)
   if not IsValid(wep) then return end
-  if wep.ST2_RecoilTweaked then return end
   local primary = wep.Primary
   if not istable(primary) then return end
-  local recoil = primary.Recoil
-  if not isnumber(recoil) then return end
+  local originalRecoil = wep.ST2_OriginalRecoil
+  if not isnumber(originalRecoil) then
+    originalRecoil = primary.Recoil
+    if not isnumber(originalRecoil) then return end
+    wep.ST2_OriginalRecoil = originalRecoil
+  end
 
+  local value = clampRecoilMultiplier(multiplier or getRecoilMultiplier())
   wep.ST2_RecoilTweaked = true
-  wep.Primary.Recoil = recoil * RECOIL_MULTIPLIER
+  wep.ST2_RecoilMultiplier = value
+  wep.Primary.Recoil = originalRecoil * value
+end
+
+local function applyRecoilMultiplierToWeapons(multiplier)
+  local value = clampRecoilMultiplier(multiplier or getRecoilMultiplier())
+  for _, ent in ipairs(ents.GetAll()) do
+    if IsValid(ent) and ent:IsWeapon() then
+      ReduceRecoil(ent, value)
+    end
+  end
+end
+
+if cvars and cvars.AddChangeCallback then
+  cvars.AddChangeCallback("st2_recoil_mult", function(_, _, new)
+    applyRecoilMultiplierToWeapons(tonumber(new))
+  end, "ST2_RecoilMultiplierUpdate")
 end
 
 hook.Add("WeaponEquip", "ST2_ReduceRecoilOnEquip", function(wep)
@@ -210,6 +239,9 @@ util.AddNetworkString("ST2_ADMIN_REQUEST")
 util.AddNetworkString("ST2_ADMIN_OPEN")
 util.AddNetworkString("ST2_ADMIN_PLAYERLIST")
 util.AddNetworkString("ST2_ADMIN_ACTION")
+util.AddNetworkString("ST2_ADMIN_RECOIL")
+util.AddNetworkString("ST2_ADMIN_RECOIL_REQUEST")
+util.AddNetworkString("ST2_ADMIN_RECOIL_SET")
 util.AddNetworkString("ST2_PS_EQUIP")
 util.AddNetworkString("ST2_PS_MODELS_REQUEST")
 util.AddNetworkString("ST2_PS_MODELS")
@@ -273,14 +305,23 @@ local function applyStoredModel(ply)
   end)
 end
 
+local function sendRecoilMultiplier(ply)
+  if not IsValid(ply) then return end
+  net.Start("ST2_ADMIN_RECOIL")
+  net.WriteFloat(getRecoilMultiplier())
+  net.Send(ply)
+end
+
 concommand.Add("shadow_admin_open", function(ply)
   if not IsAdmin(ply) then return end
   net.Start("ST2_ADMIN_OPEN") net.Send(ply)
+  sendRecoilMultiplier(ply)
 end)
 
 net.Receive("ST2_ADMIN_REQUEST", function(_, ply)
   if not IsAdmin(ply) then return end
   net.Start("ST2_ADMIN_OPEN") net.Send(ply)
+  sendRecoilMultiplier(ply)
 end)
 
 net.Receive("ST2_ADMIN_ACTION", function(_, ply)
@@ -301,6 +342,23 @@ net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   elseif act == "giveweapon" and isstring(class) and class ~= "" then
     tgt:Give(class)
   end
+end)
+
+net.Receive("ST2_ADMIN_RECOIL_REQUEST", function(_, ply)
+  if not IsAdmin(ply) then return end
+  sendRecoilMultiplier(ply)
+end)
+
+net.Receive("ST2_ADMIN_RECOIL_SET", function(_, ply)
+  if not IsAdmin(ply) then return end
+  local requested = clampRecoilMultiplier(net.ReadFloat())
+  if recoilMultiplierConVar then
+    recoilMultiplierConVar:SetFloat(requested)
+  else
+    RunConsoleCommand("st2_recoil_mult", tostring(requested))
+  end
+  sendRecoilMultiplier(ply)
+  applyRecoilMultiplierToWeapons(requested)
 end)
 
 net.Receive("ST2_ADMIN_PLAYERLIST", function(_, ply)

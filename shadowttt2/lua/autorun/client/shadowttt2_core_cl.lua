@@ -158,6 +158,27 @@ do -- Admin panel helpers
     populateAdminList(list, entries, searchText)
   end)
 
+  local function requestRecoilMultiplier()
+    net.Start("ST2_ADMIN_RECOIL_REQUEST")
+    net.SendToServer()
+  end
+
+  local function sendRecoilMultiplier(value)
+    net.Start("ST2_ADMIN_RECOIL_SET")
+    net.WriteFloat(value or 0)
+    net.SendToServer()
+  end
+
+  net.Receive("ST2_ADMIN_RECOIL", function()
+    local value = net.ReadFloat()
+    local ui = ShadowTTT2.AdminUI
+    if not ui then return end
+
+    if IsValid(ui.recoilSlider) then
+      ui.recoilSlider:SetValue(math.Round(value or 0, 2))
+    end
+  end)
+
   -- Admin open (client requests server concommand)
   concommand.Add("shadow_admin_open", function()
     net.Start("ST2_ADMIN_REQUEST")
@@ -448,6 +469,50 @@ do -- Admin panel helpers
       net.SendToServer()
     end
 
+    local recoilPanel = actionGrid:Add("DPanel")
+    recoilPanel:SetSize(230, 150)
+    recoilPanel.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(32, 32, 42, 230))
+    end
+
+    local recoilLabel = vgui.Create("DLabel", recoilPanel)
+    recoilLabel:Dock(TOP)
+    recoilLabel:DockMargin(10, 8, 10, 2)
+    recoilLabel:SetTall(22)
+    recoilLabel:SetFont("ST2.Subtitle")
+    recoilLabel:SetTextColor(THEME.text)
+    recoilLabel:SetText("Rückstoß-Multiplikator")
+
+    local recoilSlider = vgui.Create("DNumSlider", recoilPanel)
+    recoilSlider:Dock(TOP)
+    recoilSlider:DockMargin(10, 0, 10, 0)
+    recoilSlider:SetTall(48)
+    recoilSlider:SetText("")
+    recoilSlider:SetMin(0)
+    recoilSlider:SetMax(1)
+    recoilSlider:SetDecimals(2)
+    recoilSlider:SetValue(0.35)
+
+    local recoilHint = vgui.Create("DLabel", recoilPanel)
+    recoilHint:Dock(TOP)
+    recoilHint:DockMargin(10, 4, 10, 6)
+    recoilHint:SetTall(28)
+    recoilHint:SetWrap(true)
+    recoilHint:SetFont("ST2.Body")
+    recoilHint:SetTextColor(THEME.muted)
+    recoilHint:SetText("Setze 0-1.0 für weniger Rückstoß. Änderungen gelten sofort.")
+
+    local recoilApply = vgui.Create("DButton", recoilPanel)
+    recoilApply:Dock(BOTTOM)
+    recoilApply:DockMargin(10, 0, 10, 10)
+    recoilApply:SetTall(34)
+    recoilApply:SetText("Speichern")
+    styleButton(recoilApply)
+    recoilApply.DoClick = function()
+      if not IsValid(recoilSlider) then return end
+      sendRecoilMultiplier(recoilSlider:GetValue())
+    end
+
     list.OnRowSelected = function(_, _, line)
       local name = line:GetColumnText(1)
       local sid = line:GetColumnText(2)
@@ -664,10 +729,12 @@ do -- Admin panel helpers
       shopList = shopList,
       shopSearch = shopSearch,
       shopEntries = {},
+      recoilSlider = recoilSlider,
     }
 
     requestAdminPlayerList(list)
     sendTraitorShopRequest()
+    requestRecoilMultiplier()
   end
 
   net.Receive("ST2_ADMIN_OPEN", openAdminPanel)
