@@ -300,7 +300,9 @@ do -- Admin panel helpers
     net.SendToServer()
   end)
 
-  local function createActionButton(parent, label, action, getTarget)
+  local function createActionButton(parent, label, action, getTarget, opts)
+    opts = opts or {}
+    local requiresTarget = opts.requireTarget ~= false
     local btn = (parent.Add and parent:Add("DButton")) or vgui.Create("DButton", parent)
     btn:SetTall(48)
     btn:SetText(label)
@@ -312,8 +314,8 @@ do -- Admin panel helpers
       draw.RoundedBox(12, 0, 0, w, h, col)
     end
     btn.DoClick = function()
-      local sid = getTarget()
-      if not sid then return end
+      local sid = requiresTarget and getTarget() or ""
+      if requiresTarget and not sid then return end
       net.Start("ST2_ADMIN_ACTION")
       net.WriteString(action)
       net.WriteString(sid)
@@ -542,12 +544,12 @@ do -- Admin panel helpers
       {label = "Bring", id = "bring"},
       {label = "Force Traitor", id = "force_traitor"},
       {label = "Force Innocent", id = "force_innocent"},
-      {label = "Round End", id = "endround"},
-      {label = "Round Restart", id = "roundrestart"},
+      {label = "Round End", id = "endround", requireTarget = false},
+      {label = "Round Restart", id = "roundrestart", requireTarget = false},
     }
 
     for _, info in ipairs(actions) do
-      local btn = createActionButton(actionGrid, info.label, info.id, getSelectedSid)
+      local btn = createActionButton(actionGrid, info.label, info.id, getSelectedSid, {requireTarget = info.requireTarget})
       btn:SetWide(230)
     end
 
@@ -1535,7 +1537,12 @@ local function updateMapOptionPanel(ui, mapName, votes)
 end
 
 local function applyMapVoteState(options, endTime)
-  if not options or #options == 0 then return end
+  if not options or #options == 0 then
+    if IsValid(mapVoteFrame) then
+      mapVoteFrame:Close()
+    end
+    return
+  end
 
   local frame = ensureMapVoteFrame()
   local ui = frame.ShadowMapVote
