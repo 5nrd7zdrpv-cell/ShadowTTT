@@ -909,7 +909,6 @@ net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   end
 
   if act == "roundrestart" then
-    cancelMapVote()
     RunConsoleCommand("ttt_roundrestart")
     return
   end
