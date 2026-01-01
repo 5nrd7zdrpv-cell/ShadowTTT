@@ -531,6 +531,7 @@ do -- Admin panel helpers
       {label = "Bring", id = "bring"},
       {label = "Force Traitor", id = "force_traitor"},
       {label = "Force Innocent", id = "force_innocent"},
+      {label = "Round End", id = "endround"},
       {label = "Round Restart", id = "roundrestart"},
     }
 
