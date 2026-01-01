@@ -638,7 +638,14 @@ do -- Admin panel helpers
     giveWeaponDropdown:SetFont("ST2.Body")
     giveWeaponDropdown:SetValue("Waffe auswählen")
     giveWeaponDropdown:SetSortItems(false)
-    giveWeaponDropdown:SetEditable(true)
+    if giveWeaponDropdown.SetEditable then
+      giveWeaponDropdown:SetEditable(true)
+    else
+      local textEntry = (giveWeaponDropdown.GetTextEntry and giveWeaponDropdown:GetTextEntry()) or giveWeaponDropdown.TextEntry
+      if IsValid(textEntry) and textEntry.SetEditable then
+        textEntry:SetEditable(true)
+      end
+    end
     giveWeaponDropdown:SetTextColor(THEME.text)
     giveWeaponDropdown.OnSelect = function(_, _, _, data)
       giveWeaponDropdown.SelectedClass = data
