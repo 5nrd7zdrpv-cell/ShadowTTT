@@ -130,6 +130,31 @@ do -- Admin panel helpers
     end
   end
 
+  local function formatBanExpiry(expires)
+    if not expires or expires == 0 then
+      return "Permanent"
+    end
+
+    local remaining = math.max(0, expires - os.time())
+    return string.format("Endet in %s", string.NiceTime(remaining))
+  end
+
+  local function populateBanList(list, entries, filter)
+    if not IsValid(list) then return end
+    list:Clear()
+    local query = string.Trim(string.lower(filter or ""))
+    for _, ban in ipairs(entries or {}) do
+      local name = ban.name ~= "" and ban.name or "(Unbekannt)"
+      local haystack = string.lower(string.format("%s %s %s", name, ban.sid or "", ban.reason or ""))
+      if query ~= "" and not string.find(haystack, query, 1, true) then continue end
+
+      local line = addRow(list, name, ban.sid or "", ban.reason or "Kein Grund", formatBanExpiry(ban.expires), ban.banner or "")
+      if IsValid(line) then
+        line.ShadowBanSid = ban.sid
+      end
+    end
+  end
+
   local function requestAdminPlayerList(list)
     if not IsValid(list) then return end
     ShadowTTT2.AdminUI = ShadowTTT2.AdminUI or {}
@@ -205,6 +230,17 @@ do -- Admin panel helpers
     net.SendToServer()
   end
 
+  local function requestBanList()
+    net.Start("ST2_ADMIN_BANLIST_REQUEST")
+    net.SendToServer()
+  end
+
+  local function sendUnban(sid)
+    net.Start("ST2_ADMIN_UNBAN")
+    net.WriteString(sid or "")
+    net.SendToServer()
+  end
+
   local function sendRecoilMultiplier(value)
     net.Start("ST2_ADMIN_RECOIL_SET")
     net.WriteFloat(value or 0)
@@ -236,6 +272,26 @@ do -- Admin panel helpers
 
     ui.weaponList = entries
     populateWeaponDropdown(ui.weaponDropdown, entries, IsValid(ui.weaponSearch) and ui.weaponSearch:GetText() or "", ui.weaponDropdown and ui.weaponDropdown.SelectedClass)
+  end)
+
+  net.Receive("ST2_ADMIN_BANLIST", function()
+    local ui = ShadowTTT2.AdminUI
+    if not ui then return end
+
+    local count = net.ReadUInt(10)
+    local entries = {}
+    for _ = 1, count do
+      entries[#entries + 1] = {
+        sid = net.ReadString(),
+        name = net.ReadString(),
+        banner = net.ReadString(),
+        reason = net.ReadString(),
+        expires = net.ReadUInt(32)
+      }
+    end
+
+    ui.bans = entries
+    populateBanList(ui.banList, entries, IsValid(ui.banSearch) and ui.banSearch:GetText() or "")
   end)
 
   -- Admin open (client requests server concommand)
@@ -664,6 +720,111 @@ do -- Admin panel helpers
       sendRecoilMultiplier(recoilSlider:GetValue())
     end
 
+    local kickPanel = actionGrid:Add("DPanel")
+    kickPanel:SetSize(230, 150)
+    kickPanel.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(32, 32, 42, 230))
+    end
+
+    local kickLabel = vgui.Create("DLabel", kickPanel)
+    kickLabel:Dock(TOP)
+    kickLabel:DockMargin(10, 8, 10, 2)
+    kickLabel:SetTall(22)
+    kickLabel:SetFont("ST2.Subtitle")
+    kickLabel:SetTextColor(THEME.text)
+    kickLabel:SetText("Kick")
+
+    local kickReason = vgui.Create("DTextEntry", kickPanel)
+    kickReason:Dock(TOP)
+    kickReason:DockMargin(10, 0, 10, 8)
+    kickReason:SetTall(28)
+    kickReason:SetFont("ST2.Body")
+    kickReason:SetTextColor(THEME.text)
+    kickReason:SetPlaceholderText("Grund (optional)")
+    kickReason.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
+    end
+
+    local kickButton = vgui.Create("DButton", kickPanel)
+    kickButton:Dock(BOTTOM)
+    kickButton:DockMargin(10, 0, 10, 10)
+    kickButton:SetTall(34)
+    kickButton:SetText("Kicken")
+    styleButton(kickButton)
+    kickButton.DoClick = function()
+      local sid = getSelectedSid()
+      if not sid then return end
+      net.Start("ST2_ADMIN_ACTION")
+      net.WriteString("kick")
+      net.WriteString(sid)
+      net.WriteString(kickReason:GetText() or "")
+      net.SendToServer()
+    end
+
+    local banPanel = actionGrid:Add("DPanel")
+    banPanel:SetSize(230, 200)
+    banPanel.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(32, 32, 42, 230))
+    end
+
+    local banLabel = vgui.Create("DLabel", banPanel)
+    banLabel:Dock(TOP)
+    banLabel:DockMargin(10, 8, 10, 2)
+    banLabel:SetTall(22)
+    banLabel:SetFont("ST2.Subtitle")
+    banLabel:SetTextColor(THEME.text)
+    banLabel:SetText("Ban")
+
+    local banDuration = vgui.Create("DNumberWang", banPanel)
+    banDuration:Dock(TOP)
+    banDuration:DockMargin(10, 0, 10, 6)
+    banDuration:SetTall(30)
+    banDuration:SetMin(0)
+    banDuration:SetMax(525600)
+    banDuration:SetDecimals(0)
+    banDuration:SetValue(60)
+    banDuration:SetFont("ST2.Body")
+
+    local banReason = vgui.Create("DTextEntry", banPanel)
+    banReason:Dock(TOP)
+    banReason:DockMargin(10, 0, 10, 6)
+    banReason:SetTall(28)
+    banReason:SetFont("ST2.Body")
+    banReason:SetTextColor(THEME.text)
+    banReason:SetPlaceholderText("Grund (optional)")
+    banReason.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
+    end
+
+    local banHint = vgui.Create("DLabel", banPanel)
+    banHint:Dock(TOP)
+    banHint:DockMargin(10, 0, 10, 6)
+    banHint:SetTall(28)
+    banHint:SetWrap(true)
+    banHint:SetFont("ST2.Body")
+    banHint:SetTextColor(THEME.muted)
+    banHint:SetText("0 Minuten = permanent. Maximal 525600 Minuten (~1 Jahr).")
+
+    local banButton = vgui.Create("DButton", banPanel)
+    banButton:Dock(BOTTOM)
+    banButton:DockMargin(10, 0, 10, 10)
+    banButton:SetTall(34)
+    banButton:SetText("Bannen")
+    styleButton(banButton)
+    banButton.DoClick = function()
+      local sid = getSelectedSid()
+      if not sid then return end
+      local minutes = math.max(0, math.floor(tonumber(banDuration:GetValue()) or 0))
+      net.Start("ST2_ADMIN_ACTION")
+      net.WriteString("ban")
+      net.WriteString(sid)
+      net.WriteUInt(minutes, 32)
+      net.WriteString(banReason:GetText() or "")
+      net.SendToServer()
+    end
+
     list.OnRowSelected = function(_, _, line)
       local name = line:GetColumnText(1)
       local sid = line:GetColumnText(2)
@@ -677,6 +838,68 @@ do -- Admin panel helpers
       local ui = ShadowTTT2.AdminUI
       if not ui or not ui.players then return end
       populateAdminList(list, ui.players, value)
+    end
+
+    local banContainer = actionGrid:Add("DPanel")
+    banContainer:SetSize(470, 220)
+    banContainer.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(32, 32, 42, 230))
+    end
+
+    local banSearch = vgui.Create("DTextEntry", banContainer)
+    banSearch:Dock(TOP)
+    banSearch:DockMargin(10, 10, 10, 6)
+    banSearch:SetTall(26)
+    banSearch:SetFont("ST2.Body")
+    banSearch:SetTextColor(THEME.text)
+    banSearch:SetPlaceholderText("Bans filtern (Name, SteamID, Grund)")
+    banSearch.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
+    end
+
+    local banList = vgui.Create("DListView", banContainer)
+    banList:Dock(FILL)
+    banList:DockMargin(10, 0, 10, 10)
+    banList:AddColumn("Name")
+    banList:AddColumn("SteamID")
+    banList:AddColumn("Grund")
+    banList:AddColumn("Läuft ab")
+    banList:AddColumn("Gebannt von")
+    styleListView(banList)
+
+    local banButtons = vgui.Create("DPanel", banContainer)
+    banButtons:Dock(BOTTOM)
+    banButtons:DockMargin(10, 0, 10, 8)
+    banButtons:SetTall(32)
+    banButtons.Paint = function() end
+
+    local refreshBanList = vgui.Create("DButton", banButtons)
+    refreshBanList:Dock(LEFT)
+    refreshBanList:SetWide(180)
+    refreshBanList:SetText("Banliste aktualisieren")
+    styleButton(refreshBanList)
+    refreshBanList.DoClick = requestBanList
+
+    local unbanButton = vgui.Create("DButton", banButtons)
+    unbanButton:Dock(RIGHT)
+    unbanButton:SetWide(140)
+    unbanButton:SetText("Ban entfernen")
+    styleButton(unbanButton)
+    unbanButton.DoClick = function()
+      if not IsValid(banList) then return end
+      local lineID = banList:GetSelectedLine()
+      if not lineID then return end
+      local line = banList:GetLine(lineID)
+      if not IsValid(line) then return end
+      local sid = line.ShadowBanSid
+      if not sid or sid == "" then return end
+      sendUnban(sid)
+    end
+
+    banSearch.OnValueChange = function(_, value)
+      local ui = ShadowTTT2.AdminUI
+      populateBanList(banList, ui and ui.bans or {}, value)
     end
 
     -- Traitor shop tab
@@ -884,6 +1107,9 @@ do -- Admin panel helpers
       weaponDropdown = giveWeaponDropdown,
       weaponSearch = giveWeaponSearch,
       weaponList = {},
+      banList = banList,
+      banSearch = banSearch,
+      bans = {},
     }
 
     populateWeaponDropdown(giveWeaponDropdown, {}, "", nil)
@@ -891,6 +1117,8 @@ do -- Admin panel helpers
     sendTraitorShopRequest()
     requestRecoilMultiplier()
     requestWeaponList()
+    populateBanList(banList, {}, "")
+    requestBanList()
   end
 
   net.Receive("ST2_ADMIN_OPEN", openAdminPanel)
