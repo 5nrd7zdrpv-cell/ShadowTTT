@@ -188,6 +188,11 @@ do -- Admin panel helpers
     net.SendToServer()
   end
 
+  local function requestMovementSpeeds()
+    net.Start("ST2_ADMIN_SPEED_REQUEST")
+    net.SendToServer()
+  end
+
   local function populateWeaponDropdown(dropdown, weapons, filter, previousSelection)
     if not IsValid(dropdown) then return end
 
@@ -259,6 +264,13 @@ do -- Admin panel helpers
     net.SendToServer()
   end
 
+  local function sendMovementSpeeds(walk, run)
+    net.Start("ST2_ADMIN_SPEED_SET")
+    net.WriteFloat(walk or 0)
+    net.WriteFloat(run or 0)
+    net.SendToServer()
+  end
+
   net.Receive("ST2_ADMIN_RECOIL", function()
     local value = net.ReadFloat()
     local ui = ShadowTTT2.AdminUI
@@ -266,6 +278,21 @@ do -- Admin panel helpers
 
     if IsValid(ui.recoilSlider) then
       ui.recoilSlider:SetValue(math.Round(value or 0, 2))
+    end
+  end)
+
+  net.Receive("ST2_ADMIN_SPEED", function()
+    local walk = net.ReadFloat()
+    local run = net.ReadFloat()
+    local ui = ShadowTTT2.AdminUI
+    if not ui then return end
+
+    if IsValid(ui.walkSlider) then
+      ui.walkSlider:SetValue(math.Round(walk or 0, 0))
+    end
+
+    if IsValid(ui.runSlider) then
+      ui.runSlider:SetValue(math.Round(run or 0, 0))
     end
   end)
 
@@ -788,6 +815,60 @@ do -- Admin panel helpers
     recoilApply.DoClick = function()
       if not IsValid(recoilSlider) then return end
       sendRecoilMultiplier(recoilSlider:GetValue())
+    end
+
+    local speedPanel = actionGrid:Add("DPanel")
+    speedPanel:SetSize(230, 190)
+    speedPanel.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(32, 32, 42, 230))
+    end
+
+    local speedLabel = vgui.Create("DLabel", speedPanel)
+    speedLabel:Dock(TOP)
+    speedLabel:DockMargin(10, 8, 10, 2)
+    speedLabel:SetTall(22)
+    speedLabel:SetFont("ST2.Subtitle")
+    speedLabel:SetTextColor(THEME.text)
+    speedLabel:SetText("Bewegungsgeschwindigkeit")
+
+    local walkSlider = vgui.Create("DNumSlider", speedPanel)
+    walkSlider:Dock(TOP)
+    walkSlider:DockMargin(10, 0, 10, 0)
+    walkSlider:SetTall(42)
+    walkSlider:SetText("Gehen")
+    walkSlider:SetMin(50)
+    walkSlider:SetMax(500)
+    walkSlider:SetDecimals(0)
+    walkSlider:SetValue(160)
+
+    local runSlider = vgui.Create("DNumSlider", speedPanel)
+    runSlider:Dock(TOP)
+    runSlider:DockMargin(10, 0, 10, 0)
+    runSlider:SetTall(42)
+    runSlider:SetText("Sprinten")
+    runSlider:SetMin(100)
+    runSlider:SetMax(750)
+    runSlider:SetDecimals(0)
+    runSlider:SetValue(220)
+
+    local speedHint = vgui.Create("DLabel", speedPanel)
+    speedHint:Dock(TOP)
+    speedHint:DockMargin(10, 4, 10, 4)
+    speedHint:SetTall(28)
+    speedHint:SetWrap(true)
+    speedHint:SetFont("ST2.Body")
+    speedHint:SetTextColor(THEME.muted)
+    speedHint:SetText("Serverweite Werte. Neue Spieler spawnen direkt mit den geänderten Geschwindigkeiten.")
+
+    local speedApply = vgui.Create("DButton", speedPanel)
+    speedApply:Dock(BOTTOM)
+    speedApply:DockMargin(10, 0, 10, 10)
+    speedApply:SetTall(34)
+    speedApply:SetText("Speichern")
+    styleButton(speedApply)
+    speedApply.DoClick = function()
+      if not (IsValid(walkSlider) and IsValid(runSlider)) then return end
+      sendMovementSpeeds(walkSlider:GetValue(), runSlider:GetValue())
     end
 
     local kickPanel = actionGrid:Add("DPanel")
@@ -1314,6 +1395,8 @@ do -- Admin panel helpers
       shopSearch = shopSearch,
       shopEntries = {},
       recoilSlider = recoilSlider,
+      walkSlider = walkSlider,
+      runSlider = runSlider,
       weaponDropdown = giveWeaponDropdown,
       weaponSearch = giveWeaponSearch,
       shopWeaponDropdown = shopWeaponDropdown,
@@ -1332,6 +1415,7 @@ do -- Admin panel helpers
     requestAdminPlayerList(list)
     sendTraitorShopRequest()
     requestRecoilMultiplier()
+    requestMovementSpeeds()
     requestWeaponList()
     requestMapList()
     populateBanList(banList, {}, "")
