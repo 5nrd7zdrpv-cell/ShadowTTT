@@ -17,6 +17,7 @@ local THEME = {
 }
 local SLOT_MIN_BET = 5
 local SLOT_MAX_BET = 1000
+local SLOT_SPIN_TIMEOUT = 1.25
 local MODEL_PRICE_DEFAULT = 100
 local SLOT_FALLBACK_ICONS = {"🍒", "🍋", "🔔", "⭐", "💎", "7", "BAR"}
 
@@ -1858,13 +1859,21 @@ local function showSlotResult(ui, symbols, text, payout)
   end
 end
 
+local function unlockSpinButton(ui)
+  if not ui or not IsValid(ui.spinButton) then return end
+  if pointshopState.spinPending or ui.slotSpinActive then return end
+
+  ui.spinButton:SetEnabled(true)
+  ui.spinButton:SetText("Spin!")
+end
+
 local function finishSpin(ui)
   pointshopState.spinPending = false
-  if not ui then return end
-  if IsValid(ui.spinButton) then
-    ui.spinButton:SetEnabled(true)
-    ui.spinButton:SetText("Spin!")
+  if ui then
+    ui.spinFinishedAt = CurTime()
   end
+  if not ui then return end
+  unlockSpinButton(ui)
 end
 
 local function refreshPointshopList(ui, filter)
@@ -2290,21 +2299,27 @@ local function openPointshop(models, activeModel, defaultPrice)
     odds:SetTextColor(THEME.muted)
     odds:SetText("Tipp: Höhere Einsätze bedeuten auch höhere Gewinne – aber die Walzen bleiben fair.")
 
-    local function startSlotSpin()
-      if ui and ui.stopSlotSpin then ui.stopSlotSpin() end
-
+    local function startSlotSpin(onStop)
       local timers = {}
       local function stopTimers()
+        if timers.stopped then return end
+        timers.stopped = true
+
         for _, name in ipairs(timers) do
           timer.Remove(name)
         end
         timers = {}
+
+        if isfunction(onStop) then
+          onStop()
+        end
       end
 
       for colIndex, columns in ipairs(reelLabels) do
         local name = string.format("st2_slot_spin_%d_%f", colIndex, CurTime())
         table.insert(timers, name)
-        timer.Create(name, 0.08 + 0.04 * colIndex, 0, function()
+        local interval = 0.05 + 0.02 * colIndex
+        timer.Create(name, interval, 0, function()
           for _, lbl in ipairs(columns) do
             if not IsValid(lbl) then
               stopTimers()
@@ -2315,6 +2330,10 @@ local function openPointshop(models, activeModel, defaultPrice)
           end
         end)
       end
+
+      local endTimer = string.format("st2_slot_spin_end_%f", CurTime())
+      table.insert(timers, endTimer)
+      timer.Create(endTimer, SLOT_SPIN_TIMEOUT, 1, stopTimers)
 
       return stopTimers
     end
@@ -2327,6 +2346,7 @@ local function openPointshop(models, activeModel, defaultPrice)
       spinButton = spinButton,
       startSlotSpin = startSlotSpin,
       stopSlotSpin = function() end,
+      slotSpinActive = false,
     }
   end
 
@@ -2346,16 +2366,21 @@ local function openPointshop(models, activeModel, defaultPrice)
   ui.defaultPrice = defaultPrice or pointshopState.defaultPrice or MODEL_PRICE_DEFAULT
   ui.slotReels = slotUi.slotReels
   ui.stopSlotSpin = slotUi.stopSlotSpin
+  ui.slotSpinActive = slotUi.slotSpinActive
 
   if IsValid(ui.spinButton) then
     ui.spinButton.DoClick = function()
-      if pointshopState.spinPending then return end
+      if pointshopState.spinPending or ui.slotSpinActive then return end
       local bet = math.floor(tonumber(ui.betEntry:GetValue()) or SLOT_MIN_BET)
       bet = math.Clamp(bet, SLOT_MIN_BET, SLOT_MAX_BET)
       ui.betEntry:SetValue(bet)
 
+      ui.slotSpinActive = true
       if ui.startSlotSpin then
-        ui.stopSlotSpin = ui.startSlotSpin() or function() end
+        ui.stopSlotSpin = ui.startSlotSpin(function()
+          ui.slotSpinActive = false
+          unlockSpinButton(ui)
+        end) or function() end
       end
       pointshopState.spinPending = true
       ui.spinButton:SetEnabled(false)
