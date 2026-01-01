@@ -950,16 +950,6 @@ do -- Admin panel helpers
       self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
     end
 
-    local shopList = vgui.Create("DListView", shopLeft)
-    shopList:Dock(FILL)
-    shopList:DockMargin(10, 0, 10, 10)
-    shopList:AddColumn("Name")
-    shopList:AddColumn("ID")
-    shopList:AddColumn("Kategorie")
-    shopList:AddColumn("Preis")
-    shopList:AddColumn("Status")
-    styleListView(shopList)
-
     local shopRefresh = vgui.Create("DButton", shopLeft)
     shopRefresh:Dock(BOTTOM)
     shopRefresh:DockMargin(10, 0, 10, 10)
@@ -1058,6 +1048,17 @@ do -- Admin panel helpers
       sendTraitorShopAdd(id)
       shopAddEntry:SetText("")
     end
+
+    -- Keep the fill list after bottom-docked controls so the add/refresh buttons remain visible.
+    local shopList = vgui.Create("DListView", shopLeft)
+    shopList:Dock(FILL)
+    shopList:DockMargin(10, 0, 10, 10)
+    shopList:AddColumn("Name")
+    shopList:AddColumn("ID")
+    shopList:AddColumn("Kategorie")
+    shopList:AddColumn("Preis")
+    shopList:AddColumn("Status")
+    styleListView(shopList)
 
     local shopRight = vgui.Create("DPanel", shopPanel)
     shopRight:Dock(FILL)
