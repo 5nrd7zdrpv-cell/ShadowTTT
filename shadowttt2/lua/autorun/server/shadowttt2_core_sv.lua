@@ -1,8 +1,13 @@
-
 print("[ShadowTTT2] MODEL-ENUM SERVER loaded")
 
 ShadowTTT2 = ShadowTTT2 or {}
-ShadowTTT2.Admins = ShadowTTT2.Admins or { ["STEAM_0:1:15220591"] = true }
+ShadowTTT2.Admins = ShadowTTT2.Admins or {}
+local DEFAULT_OWNER_STEAMID = "STEAM_0:1:15220591"
+ShadowTTT2.Admins[DEFAULT_OWNER_STEAMID] = true
+local owner64 = util.SteamIDTo64(DEFAULT_OWNER_STEAMID)
+if owner64 and owner64 ~= "0" then
+  ShadowTTT2.Admins[owner64] = true
+end
 ShadowTTT2.WorkshopPushed = ShadowTTT2.WorkshopPushed or {}
 ShadowTTT2.ModelData = ShadowTTT2.ModelData or {}
 ShadowTTT2.Bans = ShadowTTT2.Bans or {}
@@ -724,6 +729,23 @@ local function sendRecoilMultiplier(ply)
   net.Send(ply)
 end
 
+local function endCurrentRound()
+  local winConst = _G.WIN_NONE or _G.WIN_TIMELIMIT or _G.WIN_INNOCENT or _G.WIN_TRAITOR or 0
+
+  if isfunction(EndRound) then
+    EndRound(winConst)
+    return true
+  end
+
+  if GAMEMODE and isfunction(GAMEMODE.EndRound) then
+    GAMEMODE:EndRound(winConst)
+    return true
+  end
+
+  RunConsoleCommand("ttt_roundrestart")
+  return false
+end
+
 local function collectWeaponList()
   local seen = {}
   local entries = {}
@@ -854,6 +876,11 @@ end)
 net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   if not IsAdmin(ply) then return end
   local act = net.ReadString()
+  if act == "endround" then
+    endCurrentRound()
+    return
+  end
+
   if act == "roundtime" then
     local minutes = net.ReadUInt(12) or 0
     minutes = math.Clamp(minutes, 1, 300)
