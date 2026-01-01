@@ -5,6 +5,7 @@ ShadowTTT2 = ShadowTTT2 or {}
 ShadowTTT2.Admins = ShadowTTT2.Admins or { ["STEAM_0:1:15220591"] = true }
 ShadowTTT2.WorkshopPushed = ShadowTTT2.WorkshopPushed or {}
 ShadowTTT2.ModelData = ShadowTTT2.ModelData or {}
+ShadowTTT2.Bans = ShadowTTT2.Bans or {}
 ShadowTTT2.ServerCoreLoaded = true
 
 local function IsAdmin(ply) return IsValid(ply) and ShadowTTT2.Admins[ply:SteamID()] end
@@ -19,6 +20,7 @@ local function getRecoilMultiplier()
   return clampRecoilMultiplier(recoilMultiplierConVar:GetFloat())
 end
 local MODEL_DATA_PATH = "shadowttt2/playermodels.json"
+local BAN_DATA_PATH = "shadowttt2/bans.json"
 local MODEL_CACHE_VERSION = 2
 -- These models spam AE_CL_PLAYSOUND errors because their animations reference empty sound names.
 local BLACKLISTED_MODELS = {
@@ -85,6 +87,108 @@ local function saveModelData()
     selected = ShadowTTT2.ModelData.selected or {},
     version = MODEL_CACHE_VERSION
   }, true))
+end
+
+local function sanitizeBanTable(raw)
+  if not istable(raw) then return {} end
+
+  local out = {}
+  for sid, info in pairs(raw) do
+    if isstring(sid) and sid ~= "" and istable(info) then
+      out[sid] = {
+        name = isstring(info.name) and info.name or "",
+        banner = isstring(info.banner) and info.banner or "",
+        reason = isstring(info.reason) and info.reason or "Kein Grund angegeben",
+        expires = tonumber(info.expires) or 0
+      }
+    end
+  end
+
+  return out
+end
+
+local function banExpired(ban)
+  if not istable(ban) then return true end
+  local expires = tonumber(ban.expires) or 0
+  if expires <= 0 then return false end
+  return os.time() >= expires
+end
+
+local function saveBanData()
+  ensureDataDir()
+  file.Write(BAN_DATA_PATH, util.TableToJSON(ShadowTTT2.Bans or {}, true))
+end
+
+local function loadBanData()
+  ensureDataDir()
+  local raw = file.Exists(BAN_DATA_PATH, "DATA") and file.Read(BAN_DATA_PATH, "DATA")
+  local decoded = raw and util.JSONToTable(raw) or {}
+  ShadowTTT2.Bans = sanitizeBanTable(decoded)
+
+  local changed
+  for sid, ban in pairs(ShadowTTT2.Bans) do
+    if banExpired(ban) then
+      ShadowTTT2.Bans[sid] = nil
+      changed = true
+    end
+  end
+
+  if changed then
+    saveBanData()
+  end
+end
+
+local function addBan(sid, durationMinutes, reason, banner, targetName)
+  if not isstring(sid) or sid == "" then return end
+  local expires = 0
+  if durationMinutes and durationMinutes > 0 then
+    expires = os.time() + math.floor(durationMinutes * 60)
+  end
+
+  ShadowTTT2.Bans[sid] = {
+    name = targetName or "",
+    banner = banner or "",
+    reason = (isstring(reason) and reason ~= "" and reason) or "Kein Grund angegeben",
+    expires = expires
+  }
+  saveBanData()
+end
+
+local function removeBan(sid)
+  if not isstring(sid) or sid == "" then return end
+  if ShadowTTT2.Bans[sid] then
+    ShadowTTT2.Bans[sid] = nil
+    saveBanData()
+  end
+end
+
+local function collectBanList()
+  local entries = {}
+  local changed
+  for sid, ban in pairs(ShadowTTT2.Bans or {}) do
+    if banExpired(ban) then
+      ShadowTTT2.Bans[sid] = nil
+      changed = true
+    else
+      entries[#entries + 1] = {
+        sid = sid,
+        name = ban.name or "",
+        banner = ban.banner or "",
+        reason = ban.reason or "Kein Grund angegeben",
+        expires = ban.expires or 0
+      }
+    end
+  end
+
+  if changed then
+    saveBanData()
+  end
+
+  table.sort(entries, function(a, b)
+    return string.lower(a.name ~= "" and a.name or a.sid) < string.lower(b.name ~= "" and b.name or b.sid)
+  end)
+
+  return entries
 end
 
 local function rebuildModelList()
@@ -242,10 +346,21 @@ hook.Add("InitPostEntity", "ST2_PS_REBUILD_MODELS_LATE", function()
   end)
 end)
 
+hook.Add("CheckPassword", "ST2_BanCheckPassword", function(steamid64, _, _, _, name)
+  local sid = util.SteamIDFrom64(steamid64 or "") or ""
+  local allowed, msg = checkBanStatus(sid, name)
+  if allowed == false then
+    return false, msg
+  end
+end)
+
 util.AddNetworkString("ST2_ADMIN_REQUEST")
 util.AddNetworkString("ST2_ADMIN_OPEN")
 util.AddNetworkString("ST2_ADMIN_PLAYERLIST")
 util.AddNetworkString("ST2_ADMIN_ACTION")
+util.AddNetworkString("ST2_ADMIN_BANLIST_REQUEST")
+util.AddNetworkString("ST2_ADMIN_BANLIST")
+util.AddNetworkString("ST2_ADMIN_UNBAN")
 util.AddNetworkString("ST2_ADMIN_RECOIL")
 util.AddNetworkString("ST2_ADMIN_RECOIL_REQUEST")
 util.AddNetworkString("ST2_ADMIN_RECOIL_SET")
@@ -495,6 +610,18 @@ hook.Add("PlayerInitialSpawn", "ST2_MapVoteSync", function(ply)
   end
 end)
 
+hook.Add("PlayerInitialSpawn", "ST2_BanEnforceOnJoin", function(ply)
+  if not IsValid(ply) then return end
+  local allowed, msg = checkBanStatus(ply:SteamID(), ply:Nick())
+  if allowed == false then
+    timer.Simple(0, function()
+      if IsValid(ply) then
+        ply:Kick(msg or "Du bist gebannt.")
+      end
+    end)
+  end
+end)
+
 hook.Add("PlayerDisconnected", "ST2_MapVoteRemoveVote", function(ply)
   if not mapVote.active or not IsValid(ply) then return end
   local sid = ply:SteamID()
@@ -573,6 +700,58 @@ local function sendWeaponList(ply)
   net.Send(ply)
 end
 
+local function sendBanList(targets)
+  if not targets then return end
+  local entries = collectBanList()
+
+  net.Start("ST2_ADMIN_BANLIST")
+  net.WriteUInt(#entries, 10)
+  for _, entry in ipairs(entries) do
+    net.WriteString(entry.sid or "")
+    net.WriteString(entry.name or "")
+    net.WriteString(entry.banner or "")
+    net.WriteString(entry.reason or "")
+    net.WriteUInt(entry.expires or 0, 32)
+  end
+  net.Send(targets)
+end
+
+local function broadcastBanList()
+  local admins = {}
+  for _, p in ipairs(player.GetAll()) do
+    if IsAdmin(p) then
+      admins[#admins + 1] = p
+    end
+  end
+
+  if #admins > 0 then
+    sendBanList(admins)
+  end
+end
+
+local function checkBanStatus(steamId, playerName)
+  if not isstring(steamId) or steamId == "" then return true end
+  local ban = ShadowTTT2.Bans and ShadowTTT2.Bans[steamId]
+  if not ban then return true end
+
+  if banExpired(ban) then
+    removeBan(steamId)
+    return true
+  end
+
+  local reason = ban.reason or "Du bist gebannt."
+  if ban.expires and ban.expires > 0 then
+    local remaining = math.max(0, ban.expires - os.time())
+    reason = string.format("%s | endet in %s", reason, string.NiceTime(remaining))
+  else
+    reason = reason .. " | permanent"
+  end
+
+  local who = playerName or steamId
+  print(string.format("[ShadowTTT2] Ban-Check verweigert für %s (%s)", tostring(who), tostring(steamId)))
+  return false, "[ShadowTTT2] Du bist gebannt: " .. reason
+end
+
 concommand.Add("shadow_admin_open", function(ply)
   if not IsAdmin(ply) then return end
   net.Start("ST2_ADMIN_OPEN") net.Send(ply)
@@ -602,6 +781,11 @@ net.Receive("ST2_ADMIN_WEAPON_REQUEST", function(_, ply)
   sendWeaponList(ply)
 end)
 
+net.Receive("ST2_ADMIN_BANLIST_REQUEST", function(_, ply)
+  if not IsAdmin(ply) then return end
+  sendBanList(ply)
+end)
+
 net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   if not IsAdmin(ply) then return end
   local act = net.ReadString()
@@ -614,6 +798,32 @@ net.Receive("ST2_ADMIN_ACTION", function(_, ply)
         ply:PrintMessage(HUD_PRINTTALK, "[ShadowTTT2] Rundenzeit auf " .. minutes .. " Minuten gesetzt.")
       end
     end
+    return
+  end
+
+  if act == "kick" then
+    local sid = net.ReadString()
+    local reason = string.Trim(net.ReadString() or "")
+    local tgt = player.GetBySteamID(sid)
+    if IsValid(tgt) then
+      local msg = reason ~= "" and ("Du wurdest gekickt: " .. reason) or "Du wurdest vom Server gekickt."
+      tgt:Kick(msg)
+    end
+    return
+  end
+
+  if act == "ban" then
+    local sid = net.ReadString()
+    local minutes = net.ReadUInt(32) or 0
+    local reason = string.Trim(net.ReadString() or "")
+    local tgt = player.GetBySteamID(sid)
+    if not IsValid(tgt) then return end
+
+    local banner = IsValid(ply) and ply:Nick() or "Konsole"
+    addBan(sid, math.min(minutes, 525600), reason, banner, tgt:Nick())
+    local lengthText = minutes > 0 and string.NiceTime(minutes * 60) or "permanent"
+    tgt:Kick(string.format("Gebannt (%s): %s", lengthText, reason ~= "" and reason or "Kein Grund angegeben"))
+    broadcastBanList()
     return
   end
 
@@ -649,6 +859,18 @@ net.Receive("ST2_ADMIN_RECOIL_SET", function(_, ply)
   end
   sendRecoilMultiplier(ply)
   applyRecoilMultiplierToWeapons(requested)
+end)
+
+net.Receive("ST2_ADMIN_UNBAN", function(_, ply)
+  if not IsAdmin(ply) then return end
+  local sid = net.ReadString()
+  if not isstring(sid) or sid == "" then return end
+
+  removeBan(sid)
+  broadcastBanList()
+  if IsValid(ply) then
+    ply:PrintMessage(HUD_PRINTTALK, "[ShadowTTT2] Ban für " .. sid .. " aufgehoben.")
+  end
 end)
 
 net.Receive("ST2_ADMIN_PLAYERLIST", function(_, ply)
@@ -695,6 +917,7 @@ end)
 hook.Add("PlayerSpawn", "ST2_PS_APPLY_SAVED_MODEL", applyStoredModel)
 
 -- Bootstrap caches on load so model data exists before the first request
+loadBanData()
 getModelData()
 
 print("[ShadowTTT2] MODEL-ENUM SERVER ready")
