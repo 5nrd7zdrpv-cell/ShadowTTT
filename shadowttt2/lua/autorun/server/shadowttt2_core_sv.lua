@@ -1114,6 +1114,17 @@ local function waitTimeout()
   return 45
 end
 
+local function activeTimeout()
+  local roundtime = GetConVar("ttt_roundtime_minutes")
+  local minutes = math.max(1, roundtime and roundtime:GetInt() or 10)
+  return minutes * 60 + 90
+end
+
+local function hasRoundEndElapsed()
+  local roundEnd = GetGlobalFloat("ttt_round_end", 0)
+  return roundEnd > 0 and CurTime() - roundEnd > 45
+end
+
 local function forceRoundRestart(reason)
   if roundMonitor.lastRestart > 0 and CurTime() - roundMonitor.lastRestart < 10 then return end
 
@@ -1142,6 +1153,10 @@ local function checkRoundHealth()
     forceRoundRestart("Vorbereitungsphase hängt")
   elseif state == ROUND_POST and elapsed > postTimeout() then
     forceRoundRestart("Nachbereitungsphase hängt")
+  elseif state == ROUND_ACTIVE then
+    if elapsed > activeTimeout() or hasRoundEndElapsed() then
+      forceRoundRestart("Aktive Runde hängt")
+    end
   end
 end
 
