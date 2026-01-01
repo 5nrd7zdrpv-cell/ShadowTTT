@@ -352,6 +352,18 @@ end)
 net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   if not IsAdmin(ply) then return end
   local act = net.ReadString()
+  if act == "roundtime" then
+    local minutes = net.ReadUInt(12) or 0
+    minutes = math.Clamp(minutes, 1, 300)
+    if minutes > 0 then
+      RunConsoleCommand("ttt_roundtime_minutes", tostring(minutes))
+      if IsValid(ply) then
+        ply:PrintMessage(HUD_PRINTTALK, "[ShadowTTT2] Rundenzeit auf " .. minutes .. " Minuten gesetzt.")
+      end
+    end
+    return
+  end
+
   local sid = net.ReadString()
   local class = act == "giveweapon" and string.Trim(net.ReadString() or "") or nil
 
