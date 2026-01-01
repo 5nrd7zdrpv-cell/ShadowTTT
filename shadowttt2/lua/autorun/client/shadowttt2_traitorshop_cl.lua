@@ -1,6 +1,11 @@
 
 print("[ShadowTTT2] Traitor Shop // Nova Forge UI")
 
+local function traitorShopEnabled()
+  local cvar = GetConVar("shadowttt2_traitorshop_enabled")
+  return cvar and cvar:GetBool()
+end
+
 local snapshot = {
   owned = {},
   catalogue = {},
@@ -32,6 +37,7 @@ surface.CreateFont("ST2.Small", {font = "Roboto", size = 14, weight = 500})
 surface.CreateFont("ST2.Mono", {font = "Consolas", size = 14, weight = 500})
 
 local function requestSnapshot()
+  if not traitorShopEnabled() then return end
   net.Start("ST2_TS_SYNC_REQUEST")
   net.SendToServer()
 end
@@ -489,6 +495,11 @@ local function buildFrame()
 end
 
 net.Receive("ST2_TS_SYNC", function()
+  if not traitorShopEnabled() then
+    if IsValid(activeFrame) then activeFrame:Remove() end
+    return
+  end
+
   local data = net.ReadTable() or {}
   snapshot.owned = data.owned or {}
   snapshot.catalogue = data.catalogue or snapshot.catalogue or {}
@@ -503,8 +514,15 @@ end)
 
 hook.Add("PlayerButtonDown","ST2_TS_PHASE3_FIX",function(_,key)
   if key ~= KEY_C then return end
+  if not traitorShopEnabled() then return end
   if not LocalPlayer():IsActiveTraitor() then return end
 
   requestSnapshot()
   buildFrame()
 end)
+
+cvars.AddChangeCallback("shadowttt2_traitorshop_enabled", function(_, _, new)
+  if tostring(new) == "0" and IsValid(activeFrame) then
+    activeFrame:Remove()
+  end
+end, "ST2_TS_DISABLE_UI")
