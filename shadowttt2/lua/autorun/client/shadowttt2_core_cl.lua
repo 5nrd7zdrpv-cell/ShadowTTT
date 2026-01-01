@@ -15,6 +15,8 @@ local THEME = {
   muted = Color(180, 185, 195),
   text = Color(245, 245, 245),
 }
+local SLOT_MIN_BET = 5
+local SLOT_MAX_BET = 1000
 
 surface.CreateFont("ST2.Title", {font = "Roboto", size = 24, weight = 800})
 surface.CreateFont("ST2.Subtitle", {font = "Roboto", size = 18, weight = 600})
@@ -1652,7 +1654,9 @@ local pointshopState = {
   models = {},
   activeModel = "",
   requestPending = false,
-  openPending = false
+  openPending = false,
+  points = 0,
+  spinPending = false
 }
 
 local function formatSelectedLabel(mdl, active)
@@ -1665,6 +1669,51 @@ local function formatSelectedLabel(mdl, active)
   end
 
   return mdl
+end
+
+local function requestPointsBalance()
+  net.Start("ST2_POINTS_REQUEST")
+  net.SendToServer()
+end
+
+local function updatePointsDisplay(ui, balance)
+  if not ui then return end
+  ui.points = balance or 0
+  if IsValid(ui.pointsLabel) then
+    ui.pointsLabel:SetText(string.format("Punkte: %d", ui.points))
+  end
+  if IsValid(ui.slotBalance) then
+    ui.slotBalance:SetText(string.format("Aktueller Kontostand: %d", ui.points))
+  end
+end
+
+local function showSlotResult(ui, symbols, text, payout)
+  if not ui then return end
+  if IsValid(ui.slotResult) then
+    ui.slotResult:SetText(text or "")
+    ui.slotResult:SetTextColor((payout or 0) > 0 and THEME.accent_soft or THEME.muted)
+  end
+
+  if IsValid(ui.slotSymbols) then
+    if istable(symbols) and #symbols > 0 then
+      local icons = {}
+      for _, sym in ipairs(symbols) do
+        icons[#icons + 1] = sym.icon or sym.id or "?"
+      end
+      ui.slotSymbols:SetText(table.concat(icons, "  "))
+    else
+      ui.slotSymbols:SetText("⏳")
+    end
+  end
+end
+
+local function finishSpin(ui)
+  pointshopState.spinPending = false
+  if not ui then return end
+  if IsValid(ui.spinButton) then
+    ui.spinButton:SetEnabled(true)
+    ui.spinButton:SetText("Spin!")
+  end
 end
 
 local function refreshPointshopList(ui, filter)
@@ -1744,6 +1793,7 @@ local function applyPointshopData(ui, models, activeModel)
   end
 
   selectActiveOrFirst()
+  updatePointsDisplay(ui, pointshopState.points)
 end
 
 local function openPointshop(models, activeModel)
@@ -1753,6 +1803,7 @@ local function openPointshop(models, activeModel)
     end
     activePointshopFrame:MakePopup()
     activePointshopFrame:RequestFocus()
+    requestPointsBalance()
     return
   end
 
@@ -1831,9 +1882,34 @@ local function openPointshop(models, activeModel)
     draw.RoundedBox(10, 0, 0, w, h, Color(34, 34, 44, 230))
   end
 
+  local pointsBar = vgui.Create("DPanel", right)
+  pointsBar:Dock(TOP)
+  pointsBar:SetTall(38)
+  pointsBar:DockMargin(10, 10, 10, 0)
+  pointsBar.Paint = function(_, w, h)
+    draw.RoundedBox(8, 0, 0, w, h, Color(28, 28, 36, 220))
+  end
+
+  local pointsLabel = vgui.Create("DLabel", pointsBar)
+  pointsLabel:Dock(LEFT)
+  pointsLabel:DockMargin(8, 8, 8, 8)
+  pointsLabel:SetFont("ST2.Subtitle")
+  pointsLabel:SetTextColor(THEME.text)
+  pointsLabel:SetText("Punkte: lädt...")
+
+  local refreshPoints = vgui.Create("DButton", pointsBar)
+  refreshPoints:Dock(RIGHT)
+  refreshPoints:DockMargin(8, 6, 8, 6)
+  refreshPoints:SetWide(160)
+  refreshPoints:SetText("Punkte aktualisieren")
+  styleButton(refreshPoints)
+  refreshPoints.DoClick = function()
+    requestPointsBalance()
+  end
+
   local previewTitle = vgui.Create("DLabel", right)
   previewTitle:Dock(TOP)
-  previewTitle:DockMargin(10, 10, 10, 6)
+  previewTitle:DockMargin(10, 8, 10, 6)
   previewTitle:SetFont("ST2.Subtitle")
   previewTitle:SetTextColor(THEME.text)
   previewTitle:SetText("Vorschau")
@@ -1850,6 +1926,78 @@ local function openPointshop(models, activeModel)
     self:RunAnimation()
     ent:SetAngles(Angle(0, CurTime() * 20 % 360, 0))
   end
+
+  local slotPanel = vgui.Create("DPanel", right)
+  slotPanel:Dock(BOTTOM)
+  slotPanel:DockMargin(10, 0, 10, 6)
+  slotPanel:SetTall(190)
+  slotPanel.Paint = function(_, w, h)
+    draw.RoundedBox(10, 0, 0, w, h, Color(32, 32, 42, 230))
+  end
+
+  local slotTitle = vgui.Create("DLabel", slotPanel)
+  slotTitle:Dock(TOP)
+  slotTitle:DockMargin(10, 10, 10, 2)
+  slotTitle:SetFont("ST2.Subtitle")
+  slotTitle:SetTextColor(THEME.text)
+  slotTitle:SetText("Casino Slots")
+
+  local slotHint = vgui.Create("DLabel", slotPanel)
+  slotHint:Dock(TOP)
+  slotHint:DockMargin(10, 0, 10, 6)
+  slotHint:SetFont("ST2.Body")
+  slotHint:SetTextColor(THEME.muted)
+  slotHint:SetTall(34)
+  slotHint:SetWrap(true)
+  slotHint:SetText(string.format("Setze zwischen %d und %d Punkten und gewinne bis zu 12x zurück.", SLOT_MIN_BET, SLOT_MAX_BET))
+
+  local slotBalance = vgui.Create("DLabel", slotPanel)
+  slotBalance:Dock(TOP)
+  slotBalance:DockMargin(10, 0, 10, 4)
+  slotBalance:SetFont("ST2.Mono")
+  slotBalance:SetTextColor(THEME.text)
+  slotBalance:SetText("Aktueller Kontostand: lädt...")
+
+  local slotRow = vgui.Create("DPanel", slotPanel)
+  slotRow:Dock(TOP)
+  slotRow:DockMargin(10, 2, 10, 4)
+  slotRow:SetTall(36)
+  slotRow.Paint = function(_, w, h)
+    draw.RoundedBox(8, 0, 0, w, h, Color(24, 24, 32, 220))
+  end
+
+  local betEntry = vgui.Create("DNumberWang", slotRow)
+  betEntry:Dock(LEFT)
+  betEntry:DockMargin(10, 6, 6, 6)
+  betEntry:SetWide(140)
+  betEntry:SetMin(SLOT_MIN_BET)
+  betEntry:SetMax(SLOT_MAX_BET)
+  betEntry:SetValue(math.floor((SLOT_MIN_BET + SLOT_MAX_BET) / 2))
+  betEntry:SetDecimals(0)
+  betEntry:SetFont("ST2.Body")
+
+  local spinButton = vgui.Create("DButton", slotRow)
+  spinButton:Dock(RIGHT)
+  spinButton:DockMargin(6, 6, 10, 6)
+  spinButton:SetWide(160)
+  spinButton:SetText("Spin!")
+  styleButton(spinButton)
+
+  local slotResult = vgui.Create("DLabel", slotPanel)
+  slotResult:Dock(TOP)
+  slotResult:DockMargin(10, 4, 10, 2)
+  slotResult:SetFont("ST2.Body")
+  slotResult:SetTextColor(THEME.muted)
+  slotResult:SetTall(20)
+  slotResult:SetText("Hol dir dein Glück... ")
+
+  local slotSymbols = vgui.Create("DLabel", slotPanel)
+  slotSymbols:Dock(TOP)
+  slotSymbols:DockMargin(10, 2, 10, 8)
+  slotSymbols:SetFont("ST2.Title")
+  slotSymbols:SetTextColor(THEME.text)
+  slotSymbols:SetTall(36)
+  slotSymbols:SetText("⏳")
 
   local equip = vgui.Create("DButton", right)
   equip:Dock(BOTTOM)
@@ -1873,10 +2021,32 @@ local function openPointshop(models, activeModel)
     preview = preview,
     equipButton = equip,
     selectedLabel = selected,
+    pointsLabel = pointsLabel,
+    slotResult = slotResult,
+    slotSymbols = slotSymbols,
+    slotBalance = slotBalance,
+    spinButton = spinButton,
+    betEntry = betEntry,
     models = models or {},
     activeModel = activeModel or "",
     currentModel = nil
   }
+
+  spinButton.DoClick = function()
+    if pointshopState.spinPending then return end
+    local bet = math.floor(tonumber(betEntry:GetValue()) or SLOT_MIN_BET)
+    bet = math.Clamp(bet, SLOT_MIN_BET, SLOT_MAX_BET)
+    betEntry:SetValue(bet)
+
+    pointshopState.spinPending = true
+    spinButton:SetEnabled(false)
+    spinButton:SetText("Dreht...")
+    showSlotResult(ui, nil, "Räder drehen...", 0)
+
+    net.Start("ST2_POINTS_SPIN")
+    net.WriteUInt(bet, 16)
+    net.SendToServer()
+  end
 
   listv.OnRowSelected = function(_, _, line)
     selectModel(ui, line:GetColumnText(1))
@@ -1888,6 +2058,7 @@ local function openPointshop(models, activeModel)
 
   activePointshopFrame.ShadowPointshopUI = ui
   applyPointshopData(ui, models, activeModel)
+  requestPointsBalance()
 end
 
 hook.Add("PlayerButtonDown", "ST2_F3_POINTSHOP_FINAL", function(_, key)
@@ -1896,6 +2067,7 @@ hook.Add("PlayerButtonDown", "ST2_F3_POINTSHOP_FINAL", function(_, key)
   if pointshopState.requestPending then return end
   pointshopState.requestPending = true
   pointshopState.openPending = true
+  requestPointsBalance()
   net.Start("ST2_PS_MODELS_REQUEST")
   net.SendToServer()
 end)
@@ -1923,6 +2095,41 @@ net.Receive("ST2_PS_MODELS", function()
       return
     end
     openPointshop(models, activeModel)
+  end
+end)
+
+net.Receive("ST2_POINTS_BALANCE", function()
+  local balance = net.ReadInt(32)
+  pointshopState.points = balance or 0
+  if IsValid(activePointshopFrame) and activePointshopFrame.ShadowPointshopUI then
+    updatePointsDisplay(activePointshopFrame.ShadowPointshopUI, pointshopState.points)
+  end
+end)
+
+net.Receive("ST2_POINTS_SPIN_RESULT", function()
+  local ok = net.ReadBool()
+  local message = net.ReadString()
+  local bet = net.ReadUInt(16)
+  local payout = net.ReadInt(32)
+  local balance = net.ReadInt(32)
+  local count = net.ReadUInt(3)
+  local symbols = {}
+  for i = 1, count do
+    symbols[i] = {id = net.ReadString(), icon = net.ReadString()}
+  end
+
+  pointshopState.points = balance or pointshopState.points
+  local ui = IsValid(activePointshopFrame) and activePointshopFrame.ShadowPointshopUI
+  finishSpin(ui)
+  if ui then
+    updatePointsDisplay(ui, pointshopState.points)
+    showSlotResult(ui, symbols, message ~= "" and message or (ok and "Fertig." or "Fehler"), payout)
+  end
+
+  if not ok and message and message ~= "" then
+    chat.AddText(Color(230, 90, 90), "[Pointshop] ", color_white, message)
+  elseif ok and payout and payout > 0 then
+    chat.AddText(Color(120, 200, 120), string.format("[Pointshop] Gewinn! Einsatz %d -> Gewinn %d Punkte", bet, payout))
   end
 end)
 

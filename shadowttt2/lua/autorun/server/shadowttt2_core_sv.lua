@@ -12,6 +12,7 @@ ShadowTTT2.WorkshopPushed = ShadowTTT2.WorkshopPushed or {}
 ShadowTTT2.ModelData = ShadowTTT2.ModelData or {}
 ShadowTTT2.Bans = ShadowTTT2.Bans or {}
 ShadowTTT2.Analytics = ShadowTTT2.Analytics or {}
+ShadowTTT2.Points = ShadowTTT2.Points or {balances = {}}
 ShadowTTT2.ServerCoreLoaded = true
 
 local function IsAdmin(ply)
@@ -79,6 +80,21 @@ local BAN_DATA_PATH = "shadowttt2/bans.json"
 local ANALYTICS_PATH = "shadowttt2/server_analytics.json"
 local ANALYTICS_VERSION = 1
 local MODEL_CACHE_VERSION = 3
+local POINTS_PATH = "shadowttt2/points.json"
+local POINTS_VERSION = 1
+local STARTER_POINTS = 250
+local POINTS_TICK_AMOUNT = 15
+local POINTS_TICK_INTERVAL = 240
+local MIN_SLOT_BET = 5
+local MAX_SLOT_BET = 1000
+local SLOT_COOLDOWN = 2
+local SLOT_SYMBOLS = {
+  {id = "seven", icon = "7️⃣", weight = 5, triple = 12, pair = 4},
+  {id = "diamond", icon = "💎", weight = 10, triple = 8, pair = 3},
+  {id = "bell", icon = "🔔", weight = 14, triple = 6, pair = 2},
+  {id = "star", icon = "⭐", weight = 18, triple = 5, pair = 2},
+  {id = "cherry", icon = "🍒", weight = 22, triple = 4, pair = 2}
+}
 -- These models spam AE_CL_PLAYSOUND errors because their animations reference empty sound names.
 local BLACKLISTED_MODELS = {
   ["models/alyx.mdl"] = true,
@@ -121,6 +137,139 @@ local function loadAnalytics()
   ShadowTTT2.Analytics.version = ANALYTICS_VERSION
   ShadowTTT2.Analytics.modelUsage = ShadowTTT2.Analytics.modelUsage or {}
   ShadowTTT2.Analytics.mapVotes = ShadowTTT2.Analytics.mapVotes or {}
+end
+
+local function loadPoints()
+  ensureDataDir()
+  local raw = file.Exists(POINTS_PATH, "DATA") and file.Read(POINTS_PATH, "DATA")
+  local decoded = raw and util.JSONToTable(raw)
+
+  if istable(decoded) and decoded.version == POINTS_VERSION and istable(decoded.balances) then
+    ShadowTTT2.Points = {
+      version = decoded.version,
+      balances = decoded.balances
+    }
+  else
+    ShadowTTT2.Points = {
+      version = POINTS_VERSION,
+      balances = {}
+    }
+  end
+end
+
+local function savePoints()
+  ensureDataDir()
+  local payload = {
+    version = POINTS_VERSION,
+    balances = ShadowTTT2.Points.balances or {}
+  }
+  file.Write(POINTS_PATH, util.TableToJSON(payload, true))
+end
+
+local function getPointsForSid(sid)
+  if not isstring(sid) or sid == "" then return 0 end
+  ShadowTTT2.Points.balances = ShadowTTT2.Points.balances or {}
+  return tonumber(ShadowTTT2.Points.balances[sid]) or 0
+end
+
+local function setPointsForSid(sid, amount)
+  if not isstring(sid) or sid == "" then return 0 end
+  ShadowTTT2.Points.balances = ShadowTTT2.Points.balances or {}
+  local clamped = math.max(0, math.floor(tonumber(amount) or 0))
+  ShadowTTT2.Points.balances[sid] = clamped
+  savePoints()
+  return clamped
+end
+
+local function getPoints(ply)
+  if not IsValid(ply) then return 0 end
+  return getPointsForSid(ply:SteamID())
+end
+
+local function setPoints(ply, amount)
+  if not IsValid(ply) then return 0 end
+  local newAmount = setPointsForSid(ply:SteamID(), amount)
+  ply:SetNWInt("ST2_Points", newAmount)
+  return newAmount
+end
+
+local function addPoints(ply, amount)
+  if not IsValid(ply) or not isnumber(amount) then return end
+  local current = getPoints(ply)
+  setPoints(ply, current + amount)
+end
+
+local function ensureStarterPoints(ply)
+  if not IsValid(ply) then return end
+  local sid = ply:SteamID()
+  ShadowTTT2.Points.balances = ShadowTTT2.Points.balances or {}
+  local stored = ShadowTTT2.Points.balances[sid]
+  if stored == nil then
+    setPoints(ply, STARTER_POINTS)
+    return
+  end
+
+  ply:SetNWInt("ST2_Points", getPoints(ply))
+end
+
+local function weightedSymbol()
+  local total = 0
+  for _, sym in ipairs(SLOT_SYMBOLS) do
+    total = total + (sym.weight or 1)
+  end
+  local pick = math.random() * total
+  local acc = 0
+  for _, sym in ipairs(SLOT_SYMBOLS) do
+    acc = acc + (sym.weight or 1)
+    if pick <= acc then
+      return sym
+    end
+  end
+  return SLOT_SYMBOLS[#SLOT_SYMBOLS]
+end
+
+local function resolveSlotPayout(symbols, bet)
+  if not istable(symbols) or #symbols ~= 3 then return 0 end
+  local a, b, c = symbols[1], symbols[2], symbols[3]
+  if not (a and b and c) then return 0 end
+
+  if a.id == b.id and b.id == c.id then
+    return math.floor(bet * (a.triple or 0))
+  end
+
+  if a.id == b.id or b.id == c.id or a.id == c.id then
+    local sym = a.id == b.id and a or (b.id == c.id and b or a)
+    return math.floor(bet * (sym.pair or 0))
+  end
+
+  return 0
+end
+
+local function spinSlots(ply, bet)
+  if not IsValid(ply) then return end
+
+  ShadowTTT2.Points.cooldowns = ShadowTTT2.Points.cooldowns or {}
+  local now = CurTime()
+  local nextAllowed = ShadowTTT2.Points.cooldowns[ply] or 0
+  if now < nextAllowed then
+    return false, "Bitte warte einen Moment vor dem nächsten Spin.", nil, getPoints(ply)
+  end
+
+  bet = math.Clamp(math.floor(tonumber(bet) or 0), MIN_SLOT_BET, MAX_SLOT_BET)
+  local balance = getPoints(ply)
+  if bet <= 0 then
+    return false, string.format("Mindesteinsatz: %d Punkte.", MIN_SLOT_BET), nil, balance
+  end
+  if bet > balance then
+    return false, "Nicht genug Punkte für diesen Einsatz.", nil, balance
+  end
+
+  local symbols = {weightedSymbol(), weightedSymbol(), weightedSymbol()}
+  local payout = resolveSlotPayout(symbols, bet)
+  setPoints(ply, balance - bet + payout)
+
+  ShadowTTT2.Points.cooldowns[ply] = now + SLOT_COOLDOWN
+  return true, payout > 0 and string.format("Gewonnen: +%d Punkte!", payout) or "Leider verloren – versuch es nochmal!", symbols, getPoints(ply), payout
 end
 
 local analyticsSavePending
@@ -527,6 +676,10 @@ util.AddNetworkString("ST2_PS_MODELS")
 util.AddNetworkString("ST2_PS_ADMIN_CONFIG")
 util.AddNetworkString("ST2_PS_ADMIN_CONFIG_REQUEST")
 util.AddNetworkString("ST2_PS_ADMIN_TOGGLE")
+util.AddNetworkString("ST2_POINTS_REQUEST")
+util.AddNetworkString("ST2_POINTS_BALANCE")
+util.AddNetworkString("ST2_POINTS_SPIN")
+util.AddNetworkString("ST2_POINTS_SPIN_RESULT")
 util.AddNetworkString("ST2_MAPVOTE_STATE")
 util.AddNetworkString("ST2_MAPVOTE_VOTE")
 util.AddNetworkString("ST2_MAPVOTE_RESULT")
@@ -1037,6 +1190,41 @@ net.Receive("ST2_ADMIN_MAPS_REQUEST", function(_, ply)
   sendAdminMapList(ply)
 end)
 
+local function sendPointsBalance(ply)
+  if not IsValid(ply) then return end
+  ensureStarterPoints(ply)
+  net.Start("ST2_POINTS_BALANCE")
+  net.WriteInt(getPoints(ply), 32)
+  net.Send(ply)
+end
+
+net.Receive("ST2_POINTS_REQUEST", function(_, ply)
+  if not IsValid(ply) then return end
+  sendPointsBalance(ply)
+end)
+
+net.Receive("ST2_POINTS_SPIN", function(_, ply)
+  if not IsValid(ply) then return end
+  local bet = math.Clamp(math.floor(net.ReadUInt(16) or 0), 0, 65535)
+  ensureStarterPoints(ply)
+  local ok, msg, symbols, balance, payout = spinSlots(ply, bet)
+
+  net.Start("ST2_POINTS_SPIN_RESULT")
+    net.WriteBool(ok or false)
+    net.WriteString(msg or "")
+    net.WriteUInt(bet, 16)
+    net.WriteInt(payout or 0, 32)
+    net.WriteInt(balance or getPoints(ply), 32)
+    local count = istable(symbols) and #symbols or 0
+    net.WriteUInt(count, 3)
+    for i = 1, count do
+      local sym = symbols[i] or {}
+      net.WriteString(sym.id or "")
+      net.WriteString(sym.icon or "")
+    end
+  net.Send(ply)
+end)
+
 net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   if not IsAdmin(ply) then return end
   local act = net.ReadString()
@@ -1182,7 +1370,7 @@ net.Receive("ST2_ADMIN_PLAYERLIST", function(_, ply)
     for _, tgt in ipairs(players) do
       net.WriteString(tgt:Nick())
       net.WriteString(tgt:SteamID())
-      net.WriteInt(tgt:GetNWInt("ST2_Points", 0), 32)
+      net.WriteInt(tgt:GetNWInt("ST2_Points", getPoints(tgt)), 32)
     end
   net.Send(ply)
 end)
@@ -1261,6 +1449,8 @@ hook.Add("PlayerInitialSpawn", "ST2_PS_SEND_MODEL_SNAPSHOT", function(ply)
     sendModelSnapshot(ply)
     applyStoredModel(ply)
     applyMoveSpeedToPlayer(ply)
+    ensureStarterPoints(ply)
+    sendPointsBalance(ply)
   end)
 end)
 
@@ -1270,11 +1460,24 @@ hook.Add("PlayerSpawn", "ST2_APPLY_MOVE_SPEEDS", function(ply)
     applyMoveSpeedToPlayer(ply)
   end)
 end)
+hook.Add("PlayerSpawn", "ST2_POINTS_SYNC_ON_SPAWN", function(ply)
+  timer.Simple(0, function()
+    ensureStarterPoints(ply)
+    sendPointsBalance(ply)
+  end)
+end)
 
 -- Bootstrap caches on load so model data exists before the first request
 loadAnalytics()
 loadBanData()
+loadPoints()
 getModelData()
 applyMoveSpeeds()
+
+timer.Create("ST2_POINTS_TICK", POINTS_TICK_INTERVAL, 0, function()
+  for _, p in ipairs(player.GetAll()) do
+    addPoints(p, POINTS_TICK_AMOUNT)
+  end
+end)
 
 print("[ShadowTTT2] MODEL-ENUM SERVER ready")
