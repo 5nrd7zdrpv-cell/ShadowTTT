@@ -442,6 +442,17 @@ do -- Admin panel helpers
     net.SendToServer()
   end
 
+  local function sendPointshopAdminRequest()
+    net.Start("ST2_PS_ADMIN_CONFIG_REQUEST")
+    net.SendToServer()
+  end
+
+  local function sendPointshopToggle(modelPath)
+    net.Start("ST2_PS_ADMIN_TOGGLE")
+    net.WriteString(modelPath or "")
+    net.SendToServer()
+  end
+
   local function populateShopList(list, entries, filter)
     if not IsValid(list) then return end
     list:Clear()
@@ -468,6 +479,36 @@ do -- Admin panel helpers
     end
   end
 
+  local function populateModelAdminList(list, entries, filter, onlyEnabled, counter)
+    if not IsValid(list) then return end
+    list:Clear()
+    local q = string.Trim(string.lower(filter or ""))
+    local visible = 0
+    for _, row in ipairs(entries or {}) do
+      if onlyEnabled and not row.enabled then continue end
+      if q ~= "" and not string.find(string.lower(row.model or ""), q, 1, true) then continue end
+
+      local status = row.enabled and "Aktiv" or "Versteckt"
+      local line = list:AddLine(row.model or "", status)
+      if IsValid(line) then
+        setLineTextColor(line, row.enabled and THEME.text or THEME.muted)
+        line.ShadowRowData = row
+        line.Paint = function(self, w, h)
+          local base = row.enabled and Color(255, 255, 255, 6) or Color(255, 120, 140, 20)
+          if self:IsLineSelected() then
+            base = row.enabled and THEME.accent or Color(255, 120, 140)
+          end
+          draw.RoundedBox(0, 0, 0, w, h, base)
+        end
+      end
+      visible = visible + 1
+    end
+
+    if IsValid(counter) then
+      counter:SetText(string.format("%d / %d Modelle sichtbar", visible, #(entries or {})))
+    end
+  end
+
   net.Receive("ST2_TS_ADMIN_CONFIG", function()
     local ui = ShadowTTT2.AdminUI
     if not ui then return end
@@ -490,6 +531,28 @@ do -- Admin panel helpers
       populateShopList(ui.shopList, entries, IsValid(ui.shopSearch) and ui.shopSearch:GetText() or "")
       if ui.shopList.GetLineCount and ui.shopList:GetLineCount() > 0 then
         ui.shopList:SelectFirstItem()
+      end
+    end
+  end)
+
+  net.Receive("ST2_PS_ADMIN_CONFIG", function()
+    local ui = ShadowTTT2.AdminUI
+    if not ui then return end
+
+    local count = net.ReadUInt(16)
+    local entries = {}
+    for _ = 1, count do
+      entries[#entries + 1] = {
+        model = net.ReadString(),
+        enabled = net.ReadBool()
+      }
+    end
+
+    ui.modelEntries = entries
+    if IsValid(ui.modelList) then
+      populateModelAdminList(ui.modelList, entries, IsValid(ui.modelSearch) and ui.modelSearch:GetText() or "", IsValid(ui.modelEnabledOnly) and ui.modelEnabledOnly:GetChecked(), ui.modelCounter)
+      if ui.modelList.GetLineCount and ui.modelList:GetLineCount() > 0 then
+        ui.modelList:SelectFirstItem()
       end
     end
   end)
@@ -1312,6 +1375,146 @@ do -- Admin panel helpers
     sheet:AddSheet("Moderation", moderation, "icon16/user.png")
     sheet:AddSheet("Traitor Shop", shopPanel, "icon16/plugin.png")
 
+    local modelPanel = vgui.Create("DPanel", sheet)
+    modelPanel.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(26, 26, 34, 0))
+    end
+
+    local modelLeft = vgui.Create("DPanel", modelPanel)
+    modelLeft:Dock(LEFT)
+    modelLeft:SetWide(520)
+    modelLeft:DockMargin(12, 12, 8, 12)
+    modelLeft.Paint = function(_, w, h)
+      draw.RoundedBox(10, 0, 0, w, h, Color(34, 34, 44, 230))
+    end
+
+    local modelSearch = vgui.Create("DTextEntry", modelLeft)
+    modelSearch:Dock(TOP)
+    modelSearch:DockMargin(10, 10, 10, 6)
+    modelSearch:SetTall(30)
+    modelSearch:SetFont("ST2.Body")
+    modelSearch:SetTextColor(THEME.text)
+    modelSearch:SetPlaceholderText("Modellpfad filtern...")
+    modelSearch.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
+    end
+
+    local modelEnabledOnly = vgui.Create("DCheckBoxLabel", modelLeft)
+    modelEnabledOnly:Dock(TOP)
+    modelEnabledOnly:DockMargin(12, 0, 12, 6)
+    modelEnabledOnly:SetTall(20)
+    modelEnabledOnly:SetText("Nur aktivierte Modelle anzeigen")
+    modelEnabledOnly:SetFont("ST2.Body")
+    modelEnabledOnly:SetTextColor(THEME.muted)
+
+    local modelCounter = vgui.Create("DLabel", modelLeft)
+    modelCounter:Dock(BOTTOM)
+    modelCounter:DockMargin(10, 0, 10, 10)
+    modelCounter:SetTall(18)
+    modelCounter:SetFont("ST2.Body")
+    modelCounter:SetTextColor(THEME.muted)
+    modelCounter:SetText("0 Modelle sichtbar")
+
+    local modelList = vgui.Create("DListView", modelLeft)
+    modelList:Dock(FILL)
+    modelList:DockMargin(10, 0, 10, 10)
+    modelList:AddColumn("Modell")
+    modelList:AddColumn("Status")
+    styleListView(modelList)
+    modelEnabledOnly.OnChange = function()
+      local ui = ShadowTTT2.AdminUI
+      populateModelAdminList(modelList, ui and ui.modelEntries or {}, IsValid(modelSearch) and modelSearch:GetText() or "", modelEnabledOnly:GetChecked(), modelCounter)
+    end
+
+    local modelRight = vgui.Create("DPanel", modelPanel)
+    modelRight:Dock(FILL)
+    modelRight:DockMargin(8, 12, 12, 12)
+    modelRight.Paint = function(_, w, h)
+      draw.RoundedBox(10, 0, 0, w, h, Color(34, 34, 44, 230))
+    end
+
+    local modelTitle = vgui.Create("DLabel", modelRight)
+    modelTitle:Dock(TOP)
+    modelTitle:DockMargin(10, 10, 10, 4)
+    modelTitle:SetTall(22)
+    modelTitle:SetFont("ST2.Subtitle")
+    modelTitle:SetTextColor(THEME.text)
+    modelTitle:SetText("Kein Modell ausgewählt")
+
+    local modelInfo = vgui.Create("DLabel", modelRight)
+    modelInfo:Dock(TOP)
+    modelInfo:DockMargin(10, 0, 10, 6)
+    modelInfo:SetTall(36)
+    modelInfo:SetWrap(true)
+    modelInfo:SetFont("ST2.Body")
+    modelInfo:SetTextColor(THEME.muted)
+    modelInfo:SetText("Aktiviere oder verstecke Modelle für den F3-Shop. Doppelklick in der Liste toggelt den Status.")
+
+    local modelToggle = vgui.Create("DCheckBoxLabel", modelRight)
+    modelToggle:Dock(TOP)
+    modelToggle:DockMargin(10, 2, 10, 8)
+    modelToggle:SetTall(20)
+    modelToggle:SetText("Im F3-Shop anzeigen")
+    modelToggle:SetFont("ST2.Body")
+    modelToggle:SetTextColor(THEME.text)
+
+    local modelPreview = vgui.Create("DModelPanel", modelRight)
+    modelPreview:Dock(FILL)
+    modelPreview:DockMargin(10, 0, 10, 10)
+    modelPreview:SetFOV(36)
+    modelPreview:SetCamPos(Vector(90, 0, 64))
+    modelPreview:SetLookAt(Vector(0, 0, 60))
+    modelPreview:SetDirectionalLight(BOX_TOP, color_white)
+    modelPreview:SetDirectionalLight(BOX_FRONT, Color(160, 180, 255))
+    modelPreview.LayoutEntity = function(self, ent)
+      self:RunAnimation()
+      ent:SetAngles(Angle(0, CurTime() * 15 % 360, 0))
+    end
+
+    local selectedModel
+    local suppressToggle
+    local function updateModelSelection(line)
+      selectedModel = line and line.ShadowRowData
+      if not selectedModel then
+        modelTitle:SetText("Kein Modell ausgewählt")
+        modelInfo:SetText("Aktiviere oder verstecke Modelle für den F3-Shop. Doppelklick in der Liste toggelt den Status.")
+        suppressToggle = true
+        if IsValid(modelToggle) and modelToggle.SetChecked then modelToggle:SetChecked(false) end
+        suppressToggle = false
+        if IsValid(modelPreview) then modelPreview:SetModel("models/player/kleiner.mdl") end
+        return
+      end
+
+      modelTitle:SetText(selectedModel.model or "Unbekanntes Modell")
+      modelInfo:SetText(selectedModel.enabled and "Status: Aktiv im F3-Shop" or "Status: Versteckt im F3-Shop")
+      suppressToggle = true
+      if IsValid(modelToggle) and modelToggle.SetChecked then modelToggle:SetChecked(selectedModel.enabled) end
+      suppressToggle = false
+      if IsValid(modelPreview) then modelPreview:SetModel(selectedModel.model or "") end
+    end
+
+    modelList.OnRowSelected = function(_, _, line)
+      updateModelSelection(line)
+    end
+    modelList.DoDoubleClick = function(_, _, line)
+      if not IsValid(line) or not line.ShadowRowData then return end
+      sendPointshopToggle(line.ShadowRowData.model)
+    end
+
+    modelSearch.OnValueChange = function(_, value)
+      local ui = ShadowTTT2.AdminUI
+      populateModelAdminList(modelList, ui and ui.modelEntries or {}, value, IsValid(modelEnabledOnly) and modelEnabledOnly:GetChecked(), modelCounter)
+    end
+
+    modelToggle.OnChange = function(_, state)
+      if suppressToggle then return end
+      if not selectedModel then return end
+      sendPointshopToggle(selectedModel.model)
+    end
+
+    sheet:AddSheet("F3 Modelle", modelPanel, "icon16/user_red.png")
+
     local mapPanel = vgui.Create("DPanel", sheet)
     mapPanel.Paint = function(_, w, h)
       draw.RoundedBox(12, 0, 0, w, h, Color(26, 26, 34, 0))
@@ -1420,12 +1623,20 @@ do -- Admin panel helpers
       mapDropdown = mapDropdown,
       mapCurrentLabel = mapCurrent,
       maps = {},
+      modelList = modelList,
+      modelSearch = modelSearch,
+      modelEntries = {},
+      modelEnabledOnly = modelEnabledOnly,
+      modelCounter = modelCounter,
+      modelToggle = modelToggle,
+      modelPreview = modelPreview,
     }
 
     populateWeaponDropdown(giveWeaponDropdown, {}, "", nil)
     populateWeaponDropdown(shopWeaponDropdown, {}, "", nil)
     requestAdminPlayerList(list)
     sendTraitorShopRequest()
+    sendPointshopAdminRequest()
     requestRecoilMultiplier()
     requestMovementSpeeds()
     requestWeaponList()
