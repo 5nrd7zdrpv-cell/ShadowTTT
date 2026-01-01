@@ -80,6 +80,7 @@ local BAN_DATA_PATH = "shadowttt2/bans.json"
 local ANALYTICS_PATH = "shadowttt2/server_analytics.json"
 local ANALYTICS_VERSION = 1
 local MODEL_CACHE_VERSION = 3
+local DEFAULT_MODEL_PRICE = 100
 local POINTS_PATH = "shadowttt2/points.json"
 local POINTS_VERSION = 1
 local STARTER_POINTS = 250
@@ -112,6 +113,12 @@ local function isModelAllowed(mdl)
   if not isPlayerModelPath(mdl) then return false end
   if BLACKLISTED_MODELS[string.lower(mdl)] then return false end
   return util.IsValidModel(mdl)
+end
+
+local function normalizeModelPrice(value)
+  local num = tonumber(value)
+  if not num then return DEFAULT_MODEL_PRICE end
+  return math.max(0, math.floor(num))
 end
 
 local function ensureDataDir()
@@ -309,11 +316,13 @@ local function loadModelData()
     ShadowTTT2.ModelData.models = decoded.models or {}
     ShadowTTT2.ModelData.selected = decoded.selected or {}
     ShadowTTT2.ModelData.enabled = decoded.enabled or {}
+    ShadowTTT2.ModelData.prices = decoded.prices or {}
     ShadowTTT2.ModelData.version = decoded.version or 0
   else
     ShadowTTT2.ModelData.models = {}
     ShadowTTT2.ModelData.selected = {}
     ShadowTTT2.ModelData.enabled = {}
+    ShadowTTT2.ModelData.prices = {}
     ShadowTTT2.ModelData.version = 0
   end
 
@@ -327,6 +336,10 @@ local function loadModelData()
   end
   ShadowTTT2.ModelData.models = filtered
   ShadowTTT2.ModelData.enabled = ShadowTTT2.ModelData.enabled or {}
+  ShadowTTT2.ModelData.prices = ShadowTTT2.ModelData.prices or {}
+  for mdl, price in pairs(ShadowTTT2.ModelData.prices) do
+    ShadowTTT2.ModelData.prices[mdl] = normalizeModelPrice(price)
+  end
 
   local selected = ShadowTTT2.ModelData.selected or {}
   for sid, mdl in pairs(selected) do
@@ -355,6 +368,13 @@ local function loadModelData()
     end
   end
 
+  for mdl, _ in pairs(ShadowTTT2.ModelData.prices) do
+    if not ShadowTTT2.ModelData.modelSet[mdl] then
+      ShadowTTT2.ModelData.prices[mdl] = nil
+      changed = true
+    end
+  end
+
   if changed then
     saveModelData()
   end
@@ -366,8 +386,18 @@ local function saveModelData()
     models = ShadowTTT2.ModelData.models or {},
     selected = ShadowTTT2.ModelData.selected or {},
     enabled = ShadowTTT2.ModelData.enabled or {},
+    prices = ShadowTTT2.ModelData.prices or {},
     version = MODEL_CACHE_VERSION
   }, true))
+end
+
+local function getModelPrice(mdl)
+  if not mdl or mdl == "" then return DEFAULT_MODEL_PRICE end
+  ShadowTTT2.ModelData = ShadowTTT2.ModelData or {}
+  ShadowTTT2.ModelData.prices = ShadowTTT2.ModelData.prices or {}
+  local stored = ShadowTTT2.ModelData.prices[mdl]
+  if stored == nil then return DEFAULT_MODEL_PRICE end
+  return normalizeModelPrice(stored)
 end
 
 local function sanitizeBanTable(raw)
@@ -546,6 +576,13 @@ local function rebuildModelList()
   end
 
   ShadowTTT2.ModelData.selected = selected
+
+  ShadowTTT2.ModelData.prices = ShadowTTT2.ModelData.prices or {}
+  for mdl, _ in pairs(ShadowTTT2.ModelData.prices) do
+    if not set[mdl] then
+      ShadowTTT2.ModelData.prices[mdl] = nil
+    end
+  end
   saveModelData()
 end
 
@@ -676,6 +713,7 @@ util.AddNetworkString("ST2_PS_MODELS_REQUEST")
 util.AddNetworkString("ST2_PS_MODELS")
 util.AddNetworkString("ST2_PS_ADMIN_CONFIG")
 util.AddNetworkString("ST2_PS_ADMIN_CONFIG_REQUEST")
+util.AddNetworkString("ST2_PS_ADMIN_PRICE")
 util.AddNetworkString("ST2_PS_ADMIN_TOGGLE")
 util.AddNetworkString("ST2_POINTS_REQUEST")
 util.AddNetworkString("ST2_POINTS_BALANCE")
@@ -714,6 +752,7 @@ local function getModelData()
     rebuildModelList()
   end
 
+  ShadowTTT2.ModelData.prices = ShadowTTT2.ModelData.prices or {}
   if not ShadowTTT2.ModelData.enabledSet then
     ShadowTTT2.ModelData.enabled = ShadowTTT2.ModelData.enabled or {}
     ShadowTTT2.ModelData.enabledSet = {}
@@ -728,6 +767,12 @@ local function getModelData()
       end
     end
     saveModelData()
+  end
+
+  for mdl, _ in pairs(ShadowTTT2.ModelData.prices) do
+    if not ShadowTTT2.ModelData.modelSet or not ShadowTTT2.ModelData.modelSet[mdl] then
+      ShadowTTT2.ModelData.prices[mdl] = nil
+    end
   end
 
   return ShadowTTT2.ModelData
@@ -754,9 +799,11 @@ local function sendModelSnapshot(ply)
   end
 
   net.Start("ST2_PS_MODELS")
+    net.WriteUInt(DEFAULT_MODEL_PRICE, 16)
     net.WriteUInt(#models, 16)
     for _, mdl in ipairs(models) do
       net.WriteString(mdl)
+      net.WriteUInt(getModelPrice(mdl), 16)
     end
     net.WriteString(selected or "")
   net.Send(ply)
@@ -1417,12 +1464,28 @@ net.Receive("ST2_PS_EQUIP", function(_, ply)
   if not util.IsValidModel(mdl) or not (data.modelSet and data.modelSet[mdl]) then return end
   if data.enabledSet and not data.enabledSet[mdl] then return end
 
-  ply:SetModel(mdl)
   local sid = ply:SteamID()
+  local current = sid and data.selected and data.selected[sid]
+  if current ~= mdl then
+    ensureStarterPoints(ply)
+    local price = getModelPrice(mdl)
+    if price > 0 then
+      local balance = getPoints(ply)
+      if balance < price then
+        ply:ChatPrint(string.format("[ShadowTTT2] Nicht genug Punkte: %d benötigt, %d verfügbar.", price, balance))
+        sendPointsBalance(ply)
+        return
+      end
+      setPoints(ply, balance - price)
+    end
+  end
+
+  ply:SetModel(mdl)
   data.selected = data.selected or {}
   data.selected[sid] = mdl
   trackModelUsage(mdl)
   saveModelData()
+  sendPointsBalance(ply)
   sendModelSnapshot(ply)
 end)
 
@@ -1431,10 +1494,12 @@ local function sendModelAdminConfig(ply)
   local data = getModelData()
   local models = data.models or {}
   net.Start("ST2_PS_ADMIN_CONFIG")
+    net.WriteUInt(DEFAULT_MODEL_PRICE, 16)
     net.WriteUInt(#models, 16)
     for _, mdl in ipairs(models) do
       net.WriteString(mdl)
       net.WriteBool(not data.enabledSet or data.enabledSet[mdl])
+      net.WriteUInt(getModelPrice(mdl), 16)
     end
   net.Send(ply)
 end
@@ -1442,6 +1507,29 @@ end
 net.Receive("ST2_PS_ADMIN_CONFIG_REQUEST", function(_, ply)
   if not IsAdmin(ply) then return end
   sendModelAdminConfig(ply)
+end)
+
+net.Receive("ST2_PS_ADMIN_PRICE", function(_, ply)
+  if not IsAdmin(ply) then return end
+
+  local mdl = net.ReadString()
+  local useDefault = net.ReadBool()
+  local price = net.ReadUInt(16)
+  if not isstring(mdl) or mdl == "" then return end
+
+  local data = getModelData()
+  if not data.modelSet or not data.modelSet[mdl] then return end
+
+  data.prices = data.prices or {}
+  if useDefault then
+    data.prices[mdl] = nil
+  else
+    data.prices[mdl] = normalizeModelPrice(price)
+  end
+
+  saveModelData()
+  sendModelAdminConfig(ply)
+  broadcastModelSnapshots()
 end)
 
 net.Receive("ST2_PS_ADMIN_TOGGLE", function(_, ply)
