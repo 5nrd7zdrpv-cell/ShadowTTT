@@ -78,7 +78,7 @@ local MODEL_DATA_PATH = "shadowttt2/playermodels.json"
 local BAN_DATA_PATH = "shadowttt2/bans.json"
 local ANALYTICS_PATH = "shadowttt2/server_analytics.json"
 local ANALYTICS_VERSION = 1
-local MODEL_CACHE_VERSION = 2
+local MODEL_CACHE_VERSION = 3
 -- These models spam AE_CL_PLAYSOUND errors because their animations reference empty sound names.
 local BLACKLISTED_MODELS = {
   ["models/alyx.mdl"] = true,
@@ -159,10 +159,12 @@ local function loadModelData()
   if istable(decoded) then
     ShadowTTT2.ModelData.models = decoded.models or {}
     ShadowTTT2.ModelData.selected = decoded.selected or {}
+    ShadowTTT2.ModelData.enabled = decoded.enabled or {}
     ShadowTTT2.ModelData.version = decoded.version or 0
   else
     ShadowTTT2.ModelData.models = {}
     ShadowTTT2.ModelData.selected = {}
+    ShadowTTT2.ModelData.enabled = {}
     ShadowTTT2.ModelData.version = 0
   end
 
@@ -175,6 +177,7 @@ local function loadModelData()
     end
   end
   ShadowTTT2.ModelData.models = filtered
+  ShadowTTT2.ModelData.enabled = ShadowTTT2.ModelData.enabled or {}
 
   local selected = ShadowTTT2.ModelData.selected or {}
   for sid, mdl in pairs(selected) do
@@ -183,6 +186,29 @@ local function loadModelData()
     end
   end
   ShadowTTT2.ModelData.selected = selected
+
+  ShadowTTT2.ModelData.enabledSet = {}
+  local changed
+  for mdl, state in pairs(ShadowTTT2.ModelData.enabled) do
+    if not ShadowTTT2.ModelData.modelSet[mdl] then
+      ShadowTTT2.ModelData.enabled[mdl] = nil
+      changed = true
+    end
+  end
+
+  for _, mdl in ipairs(ShadowTTT2.ModelData.models) do
+    if ShadowTTT2.ModelData.enabled[mdl] == nil then
+      ShadowTTT2.ModelData.enabled[mdl] = true
+      changed = true
+    end
+    if ShadowTTT2.ModelData.enabled[mdl] then
+      ShadowTTT2.ModelData.enabledSet[mdl] = true
+    end
+  end
+
+  if changed then
+    saveModelData()
+  end
 end
 
 local function saveModelData()
@@ -190,6 +216,7 @@ local function saveModelData()
   file.Write(MODEL_DATA_PATH, util.TableToJSON({
     models = ShadowTTT2.ModelData.models or {},
     selected = ShadowTTT2.ModelData.selected or {},
+    enabled = ShadowTTT2.ModelData.enabled or {},
     version = MODEL_CACHE_VERSION
   }, true))
 end
@@ -344,6 +371,23 @@ local function rebuildModelList()
   ShadowTTT2.ModelData.models = list
   ShadowTTT2.ModelData.modelSet = set
   ShadowTTT2.ModelData.version = MODEL_CACHE_VERSION
+  ShadowTTT2.ModelData.enabled = ShadowTTT2.ModelData.enabled or {}
+
+  for mdl, _ in pairs(ShadowTTT2.ModelData.enabled) do
+    if not set[mdl] then
+      ShadowTTT2.ModelData.enabled[mdl] = nil
+    end
+  end
+
+  ShadowTTT2.ModelData.enabledSet = {}
+  for _, mdl in ipairs(list) do
+    if ShadowTTT2.ModelData.enabled[mdl] == nil then
+      ShadowTTT2.ModelData.enabled[mdl] = true
+    end
+    if ShadowTTT2.ModelData.enabled[mdl] then
+      ShadowTTT2.ModelData.enabledSet[mdl] = true
+    end
+  end
 
   local selected = ShadowTTT2.ModelData.selected or {}
   for sid, mdl in pairs(selected) do
@@ -480,6 +524,9 @@ util.AddNetworkString("ST2_ADMIN_MAP_CHANGE")
 util.AddNetworkString("ST2_PS_EQUIP")
 util.AddNetworkString("ST2_PS_MODELS_REQUEST")
 util.AddNetworkString("ST2_PS_MODELS")
+util.AddNetworkString("ST2_PS_ADMIN_CONFIG")
+util.AddNetworkString("ST2_PS_ADMIN_CONFIG_REQUEST")
+util.AddNetworkString("ST2_PS_ADMIN_TOGGLE")
 util.AddNetworkString("ST2_MAPVOTE_STATE")
 util.AddNetworkString("ST2_MAPVOTE_VOTE")
 util.AddNetworkString("ST2_MAPVOTE_RESULT")
@@ -513,6 +560,22 @@ local function getModelData()
     rebuildModelList()
   end
 
+  if not ShadowTTT2.ModelData.enabledSet then
+    ShadowTTT2.ModelData.enabled = ShadowTTT2.ModelData.enabled or {}
+    ShadowTTT2.ModelData.enabledSet = {}
+    for _, mdl in ipairs(ShadowTTT2.ModelData.models or {}) do
+      local state = ShadowTTT2.ModelData.enabled[mdl]
+      if state == nil then
+        state = true
+        ShadowTTT2.ModelData.enabled[mdl] = true
+      end
+      if state then
+        ShadowTTT2.ModelData.enabledSet[mdl] = true
+      end
+    end
+    saveModelData()
+  end
+
   return ShadowTTT2.ModelData
 end
 
@@ -520,13 +583,28 @@ local function sendModelSnapshot(ply)
   if not IsValid(ply) then return end
 
   local data = getModelData()
-  local models = data.models or {}
+  local models = {}
+  local enabledSet = data.enabledSet or {}
+  for _, mdl in ipairs(data.models or {}) do
+    if enabledSet[mdl] then
+      models[#models + 1] = mdl
+    end
+  end
+
+  local sid = ply:SteamID()
+  local selected = sid and data.selected and data.selected[sid]
+  if selected and not enabledSet[selected] then
+    data.selected[sid] = nil
+    saveModelData()
+    selected = ""
+  end
+
   net.Start("ST2_PS_MODELS")
     net.WriteUInt(#models, 16)
     for _, mdl in ipairs(models) do
       net.WriteString(mdl)
     end
-    net.WriteString((data.selected and data.selected[ply:SteamID()]) or "")
+    net.WriteString(selected or "")
   net.Send(ply)
 end
 
@@ -782,7 +860,7 @@ local function applyStoredModel(ply)
   if not IsValid(ply) then return end
   local data = getModelData()
   local mdl = data.selected and data.selected[ply:SteamID()]
-  if not mdl or not data.modelSet or not data.modelSet[mdl] then return end
+  if not mdl or not data.modelSet or not data.modelSet[mdl] or (data.enabledSet and not data.enabledSet[mdl]) then return end
 
   timer.Simple(0, function()
     if IsValid(ply) then
@@ -1120,6 +1198,7 @@ net.Receive("ST2_PS_EQUIP", function(_, ply)
 
   local data = getModelData()
   if not util.IsValidModel(mdl) or not (data.modelSet and data.modelSet[mdl]) then return end
+  if data.enabledSet and not data.enabledSet[mdl] then return end
 
   ply:SetModel(mdl)
   local sid = ply:SteamID()
@@ -1128,6 +1207,53 @@ net.Receive("ST2_PS_EQUIP", function(_, ply)
   trackModelUsage(mdl)
   saveModelData()
   sendModelSnapshot(ply)
+end)
+
+local function sendModelAdminConfig(ply)
+  if not IsAdmin(ply) then return end
+  local data = getModelData()
+  local models = data.models or {}
+  net.Start("ST2_PS_ADMIN_CONFIG")
+    net.WriteUInt(#models, 16)
+    for _, mdl in ipairs(models) do
+      net.WriteString(mdl)
+      net.WriteBool(not data.enabledSet or data.enabledSet[mdl])
+    end
+  net.Send(ply)
+end
+
+net.Receive("ST2_PS_ADMIN_CONFIG_REQUEST", function(_, ply)
+  if not IsAdmin(ply) then return end
+  sendModelAdminConfig(ply)
+end)
+
+net.Receive("ST2_PS_ADMIN_TOGGLE", function(_, ply)
+  if not IsAdmin(ply) then return end
+
+  local mdl = net.ReadString()
+  if not isstring(mdl) or mdl == "" then return end
+
+  local data = getModelData()
+  if not data.modelSet or not data.modelSet[mdl] then return end
+
+  data.enabled = data.enabled or {}
+  local current = data.enabled[mdl]
+  if current == nil then current = true end
+  data.enabled[mdl] = not current
+
+  if data.enabled[mdl] == false then
+    for sid, selected in pairs(data.selected or {}) do
+      if selected == mdl then
+        data.selected[sid] = nil
+      end
+    end
+  end
+
+  data.enabledSet = nil
+  saveModelData()
+  getModelData()
+  sendModelAdminConfig(ply)
+  broadcastModelSnapshots()
 end)
 
 hook.Add("PlayerInitialSpawn", "ST2_PS_SEND_MODEL_SNAPSHOT", function(ply)
