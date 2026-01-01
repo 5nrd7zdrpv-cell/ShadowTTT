@@ -235,6 +235,18 @@ do -- Admin panel helpers
     net.SendToServer()
   end
 
+  local function requestMapList()
+    net.Start("ST2_ADMIN_MAPS_REQUEST")
+    net.SendToServer()
+  end
+
+  local function sendMapChange(mapName)
+    if not isstring(mapName) or mapName == "" then return end
+    net.Start("ST2_ADMIN_MAP_CHANGE")
+    net.WriteString(mapName)
+    net.SendToServer()
+  end
+
   local function sendUnban(sid)
     net.Start("ST2_ADMIN_UNBAN")
     net.WriteString(sid or "")
@@ -273,6 +285,42 @@ do -- Admin panel helpers
     ui.weaponList = entries
     populateWeaponDropdown(ui.weaponDropdown, entries, IsValid(ui.weaponSearch) and ui.weaponSearch:GetText() or "", ui.weaponDropdown and ui.weaponDropdown.SelectedClass)
     populateWeaponDropdown(ui.shopWeaponDropdown, entries, IsValid(ui.shopWeaponSearch) and ui.shopWeaponSearch:GetText() or "", ui.shopWeaponDropdown and ui.shopWeaponDropdown.SelectedClass)
+  end)
+
+  net.Receive("ST2_ADMIN_MAPS", function()
+    local ui = ShadowTTT2.AdminUI
+    if not ui then return end
+
+    local current = net.ReadString()
+    local count = net.ReadUInt(12)
+    local entries = {}
+    for _ = 1, count do
+      entries[#entries + 1] = net.ReadString()
+    end
+
+    ui.maps = entries
+    ui.currentMap = current or ""
+
+    if IsValid(ui.mapCurrentLabel) then
+      ui.mapCurrentLabel:SetText(current ~= "" and ("Aktuelle Map: " .. current) or "Aktuelle Map unbekannt")
+    end
+
+    if not IsValid(ui.mapDropdown) then return end
+    ui.mapDropdown:Clear()
+    ui.mapDropdown.SelectedMap = nil
+
+    for _, mapName in ipairs(entries) do
+      ui.mapDropdown:AddChoice(mapName, mapName)
+    end
+
+    if ui.mapDropdown.SetValue then
+      ui.mapDropdown:SetValue(#entries > 0 and string.format("Map auswählen (%d)", #entries) or "Keine Maps gefunden")
+    end
+
+    if #entries > 0 and ui.mapDropdown.ChooseOptionID then
+      ui.mapDropdown:ChooseOptionID(1)
+      ui.mapDropdown.SelectedMap = entries[1]
+    end
   end)
 
   net.Receive("ST2_ADMIN_BANLIST", function()
@@ -1171,6 +1219,92 @@ do -- Admin panel helpers
     sheet:AddSheet("Moderation", moderation, "icon16/user.png")
     sheet:AddSheet("Traitor Shop", shopPanel, "icon16/plugin.png")
 
+    local mapPanel = vgui.Create("DPanel", sheet)
+    mapPanel.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(26, 26, 34, 0))
+    end
+
+    local mapContainer = vgui.Create("DPanel", mapPanel)
+    mapContainer:Dock(FILL)
+    mapContainer:DockMargin(12, 12, 12, 12)
+    mapContainer.Paint = function(_, w, h)
+      draw.RoundedBox(10, 0, 0, w, h, Color(34, 34, 44, 230))
+    end
+
+    local mapHeader = vgui.Create("DLabel", mapContainer)
+    mapHeader:Dock(TOP)
+    mapHeader:DockMargin(12, 12, 12, 4)
+    mapHeader:SetTall(24)
+    mapHeader:SetFont("ST2.Subtitle")
+    mapHeader:SetTextColor(THEME.text)
+    mapHeader:SetText("Map Auswahl")
+
+    local mapCurrent = vgui.Create("DLabel", mapContainer)
+    mapCurrent:Dock(TOP)
+    mapCurrent:DockMargin(12, 0, 12, 8)
+    mapCurrent:SetTall(20)
+    mapCurrent:SetFont("ST2.Body")
+    mapCurrent:SetTextColor(THEME.muted)
+    mapCurrent:SetText("Aktuelle Map: wird geladen...")
+
+    local mapHint = vgui.Create("DLabel", mapContainer)
+    mapHint:Dock(TOP)
+    mapHint:DockMargin(12, 0, 12, 10)
+    mapHint:SetTall(40)
+    mapHint:SetWrap(true)
+    mapHint:SetFont("ST2.Body")
+    mapHint:SetTextColor(THEME.muted)
+    mapHint:SetText("Wähle eine Map aus der Liste aus. Der Wechsel erfolgt nach kurzer Verzögerung für alle Spieler.")
+
+    local mapDropdown = vgui.Create("DComboBox", mapContainer)
+    mapDropdown:Dock(TOP)
+    mapDropdown:DockMargin(12, 0, 12, 10)
+    mapDropdown:SetTall(34)
+    mapDropdown:SetFont("ST2.Body")
+    mapDropdown:SetSortItems(false)
+    mapDropdown:SetValue("Maps werden geladen...")
+    mapDropdown:SetTextColor(THEME.text)
+    mapDropdown.OnSelect = function(_, _, value, data)
+      mapDropdown.SelectedMap = data or value
+    end
+    mapDropdown.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      draw.SimpleText(self:GetValue(), "ST2.Body", 10, h / 2, THEME.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+      draw.SimpleText("▼", "ST2.Body", w - 14, h / 2, THEME.muted, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+
+    local mapButtons = vgui.Create("DPanel", mapContainer)
+    mapButtons:Dock(TOP)
+    mapButtons:DockMargin(12, 0, 12, 10)
+    mapButtons:SetTall(38)
+    mapButtons.Paint = function() end
+
+    local mapRefresh = vgui.Create("DButton", mapButtons)
+    mapRefresh:Dock(LEFT)
+    mapRefresh:SetWide(160)
+    mapRefresh:SetText("Maps aktualisieren")
+    styleButton(mapRefresh)
+    mapRefresh.DoClick = requestMapList
+
+    local mapApply = vgui.Create("DButton", mapButtons)
+    mapApply:Dock(RIGHT)
+    mapApply:SetWide(200)
+    mapApply:SetText("Map wechseln")
+    styleButton(mapApply)
+    mapApply.DoClick = function()
+      local target = mapDropdown.SelectedMap or ""
+      if (not target or target == "") and mapDropdown.GetValue then
+        local raw = string.Trim(mapDropdown:GetValue() or "")
+        if raw ~= "" and raw ~= "Keine Maps gefunden" and not string.find(raw, "auswählen", 1, true) then
+          target = raw
+        end
+      end
+      if not target or target == "" then return end
+      sendMapChange(target)
+    end
+
+    sheet:AddSheet("Maps", mapPanel, "icon16/map.png")
+
     ShadowTTT2.AdminUI = {
       frame = f,
       list = list,
@@ -1188,6 +1322,9 @@ do -- Admin panel helpers
       banList = banList,
       banSearch = banSearch,
       bans = {},
+      mapDropdown = mapDropdown,
+      mapCurrentLabel = mapCurrent,
+      maps = {},
     }
 
     populateWeaponDropdown(giveWeaponDropdown, {}, "", nil)
@@ -1196,6 +1333,7 @@ do -- Admin panel helpers
     sendTraitorShopRequest()
     requestRecoilMultiplier()
     requestWeaponList()
+    requestMapList()
     populateBanList(banList, {}, "")
     requestBanList()
   end

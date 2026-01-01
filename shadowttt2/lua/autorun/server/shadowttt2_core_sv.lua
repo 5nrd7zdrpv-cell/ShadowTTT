@@ -434,6 +434,9 @@ util.AddNetworkString("ST2_ADMIN_RECOIL_REQUEST")
 util.AddNetworkString("ST2_ADMIN_RECOIL_SET")
 util.AddNetworkString("ST2_ADMIN_WEAPON_REQUEST")
 util.AddNetworkString("ST2_ADMIN_WEAPON_LIST")
+util.AddNetworkString("ST2_ADMIN_MAPS_REQUEST")
+util.AddNetworkString("ST2_ADMIN_MAPS")
+util.AddNetworkString("ST2_ADMIN_MAP_CHANGE")
 util.AddNetworkString("ST2_PS_EQUIP")
 util.AddNetworkString("ST2_PS_MODELS_REQUEST")
 util.AddNetworkString("ST2_PS_MODELS")
@@ -555,6 +558,19 @@ local function collectMaps()
   end
 
   return list
+end
+
+local function sendAdminMapList(ply)
+  if not IsValid(ply) then return end
+  local maps = collectMaps()
+
+  net.Start("ST2_ADMIN_MAPS")
+    net.WriteString(game.GetMap() or "")
+    net.WriteUInt(#maps, 12)
+    for _, mapName in ipairs(maps) do
+      net.WriteString(mapName)
+    end
+  net.Send(ply)
 end
 
 local function shuffle(list)
@@ -887,6 +903,11 @@ net.Receive("ST2_ADMIN_BANLIST_REQUEST", function(_, ply)
   sendBanList(ply)
 end)
 
+net.Receive("ST2_ADMIN_MAPS_REQUEST", function(_, ply)
+  if not IsAdmin(ply) then return end
+  sendAdminMapList(ply)
+end)
+
 net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   if not IsAdmin(ply) then return end
   local act = net.ReadString()
@@ -982,6 +1003,19 @@ net.Receive("ST2_ADMIN_UNBAN", function(_, ply)
   if IsValid(ply) then
     ply:PrintMessage(HUD_PRINTTALK, "[ShadowTTT2] Ban für " .. sid .. " aufgehoben.")
   end
+end)
+
+net.Receive("ST2_ADMIN_MAP_CHANGE", function(_, ply)
+  if not IsAdmin(ply) then return end
+  local mapName = string.Trim(net.ReadString() or "")
+  if mapName == "" then return end
+  if not file.Exists("maps/" .. mapName .. ".bsp", "GAME") then return end
+
+  cancelMapVote()
+  PrintMessage(HUD_PRINTTALK, string.format("[ShadowTTT2] %s wechselt die Map zu %s", IsValid(ply) and ply:Nick() or "Konsole", mapName))
+  timer.Simple(2, function()
+    RunConsoleCommand("changelevel", mapName)
+  end)
 end)
 
 net.Receive("ST2_ADMIN_PLAYERLIST", function(_, ply)
