@@ -20,6 +20,10 @@ local SLOT_MAX_BET = 1000
 local MODEL_PRICE_DEFAULT = 100
 local SLOT_FALLBACK_ICONS = {"🍒", "🍋", "🔔", "⭐", "💎", "7", "BAR"}
 
+local function randomSlotIcon()
+  return SLOT_FALLBACK_ICONS[math.random(#SLOT_FALLBACK_ICONS)] or "?"
+end
+
 surface.CreateFont("ST2.Title", {font = "Roboto", size = 24, weight = 800})
 surface.CreateFont("ST2.Subtitle", {font = "Roboto", size = 18, weight = 600})
 surface.CreateFont("ST2.Body", {font = "Roboto", size = 16, weight = 500})
@@ -1826,21 +1830,30 @@ end
 
 local function showSlotResult(ui, symbols, text, payout)
   if not ui then return end
-  local fallbackIcon = function()
-    return SLOT_FALLBACK_ICONS[math.random(#SLOT_FALLBACK_ICONS)] or "?"
-  end
+  if ui.stopSlotSpin then ui.stopSlotSpin() end
+  local win = (payout or 0) > 0
 
   if IsValid(ui.slotResult) then
     ui.slotResult:SetText(text or "")
-    ui.slotResult:SetTextColor((payout or 0) > 0 and THEME.accent_soft or THEME.muted)
+    ui.slotResult:SetTextColor(win and THEME.accent_soft or THEME.muted)
   end
 
   if istable(ui.slotReels) then
+    local accentColor = win and THEME.accent_soft or color_white
     for i = 1, 3 do
-      local lbl = ui.slotReels[i]
-      if not IsValid(lbl) then continue end
+      local col = ui.slotReels[i]
+      if not istable(col) then continue end
       local sym = istable(symbols) and symbols[i] or nil
-      lbl:SetText(sym and (sym.icon or sym.id or "?") or fallbackIcon())
+      local midIcon = sym and (sym.icon or sym.id or "?") or randomSlotIcon()
+      local topIcon = randomSlotIcon()
+      local bottomIcon = randomSlotIcon()
+
+      for idx, icon in ipairs({topIcon, midIcon, bottomIcon}) do
+        local lbl = col[idx]
+        if not IsValid(lbl) then continue end
+        lbl:SetText(icon)
+        lbl:SetTextColor(idx == 2 and accentColor or THEME.text)
+      end
     end
   end
 end
@@ -1984,6 +1997,10 @@ local function openPointshop(models, activeModel, defaultPrice)
   activePointshopFrame = f
   f.OnRemove = function()
     if activePointshopFrame == f then
+      local ui = activePointshopFrame.ShadowPointshopUI
+      if ui and ui.stopSlotSpin then
+        ui.stopSlotSpin()
+      end
       activePointshopFrame = nil
     end
   end
@@ -2177,7 +2194,7 @@ local function openPointshop(models, activeModel, defaultPrice)
     subtitle:SetWrap(true)
     subtitle:SetFont("ST2.Body")
     subtitle:SetTextColor(THEME.muted)
-    subtitle:SetText(string.format("Drei Walzen im Blick: setze zwischen %d und %d Punkten. Bis zu 12x Gewinn möglich, gönn dir eine Runde!", SLOT_MIN_BET, SLOT_MAX_BET))
+    subtitle:SetText(string.format("Drei Walzen im 3x3 Raster: setze zwischen %d und %d Punkten. Bis zu 12x Gewinn möglich, gönn dir eine Runde!", SLOT_MIN_BET, SLOT_MAX_BET))
 
     local balance = vgui.Create("DLabel", panel)
     balance:Dock(TOP)
@@ -2189,9 +2206,12 @@ local function openPointshop(models, activeModel, defaultPrice)
     local reels = vgui.Create("DPanel", panel)
     reels:Dock(TOP)
     reels:DockMargin(12, 0, 12, 10)
-    reels:SetTall(140)
+    reels:SetTall(200)
     reels.Paint = function(_, w, h)
       draw.RoundedBox(12, 0, 0, w, h, Color(22, 22, 30, 220))
+      surface.SetDrawColor(Color(255, 255, 255, 20))
+      surface.DrawRect(10, h / 2 - 2, w - 20, 4)
+      draw.SimpleText("Gewinnlinie", "ST2.Small", w - 80, h / 2 - 12, THEME.muted, TEXT_ALIGN_CENTER)
     end
 
     local reelLayout = vgui.Create("DIconLayout", reels)
@@ -2203,18 +2223,25 @@ local function openPointshop(models, activeModel, defaultPrice)
     local reelLabels = {}
     for i = 1, 3 do
       local slotBox = reelLayout:Add("DPanel")
-      slotBox:SetSize(150, 108)
+      slotBox:SetSize(150, 170)
       slotBox.Paint = function(_, w, h)
         draw.RoundedBox(10, 0, 0, w, h, Color(40, 44, 56, 240))
+        surface.SetDrawColor(Color(255, 255, 255, 20))
+        surface.DrawRect(6, h / 2 - 26, w - 12, 52)
       end
 
-      local lbl = vgui.Create("DLabel", slotBox)
-      lbl:Dock(FILL)
-      lbl:SetFont("ST2.SlotReel")
-      lbl:SetTextColor(color_white)
-      lbl:SetContentAlignment(5)
-      lbl:SetText(SLOT_FALLBACK_ICONS[i] or "⏳")
-      reelLabels[i] = lbl
+      reelLabels[i] = {}
+      for row = 1, 3 do
+        local lbl = vgui.Create("DLabel", slotBox)
+        lbl:Dock(TOP)
+        lbl:DockMargin(8, row == 1 and 10 or 4, 8, row == 3 and 10 or 4)
+        lbl:SetTall(48)
+        lbl:SetFont("ST2.SlotReel")
+        lbl:SetTextColor(THEME.text)
+        lbl:SetContentAlignment(5)
+        lbl:SetText(randomSlotIcon())
+        reelLabels[i][row] = lbl
+      end
     end
 
     local reelHint = vgui.Create("DLabel", panel)
@@ -2222,7 +2249,7 @@ local function openPointshop(models, activeModel, defaultPrice)
     reelHint:DockMargin(12, 0, 12, 8)
     reelHint:SetFont("ST2.Body")
     reelHint:SetTextColor(THEME.muted)
-    reelHint:SetText("3 Symbole gleichzeitig sichtbar – Auszahlungen bis 12x bei Kombinationen.")
+    reelHint:SetText("3x3 Walzen mit mittlerer Gewinnlinie – Auszahlungen bis 12x bei Kombinationen.")
 
     local betRow = vgui.Create("DPanel", panel)
     betRow:Dock(TOP)
@@ -2263,12 +2290,43 @@ local function openPointshop(models, activeModel, defaultPrice)
     odds:SetTextColor(THEME.muted)
     odds:SetText("Tipp: Höhere Einsätze bedeuten auch höhere Gewinne – aber die Walzen bleiben fair.")
 
+    local function startSlotSpin()
+      if ui and ui.stopSlotSpin then ui.stopSlotSpin() end
+
+      local timers = {}
+      local function stopTimers()
+        for _, name in ipairs(timers) do
+          timer.Remove(name)
+        end
+        timers = {}
+      end
+
+      for colIndex, columns in ipairs(reelLabels) do
+        local name = string.format("st2_slot_spin_%d_%f", colIndex, CurTime())
+        table.insert(timers, name)
+        timer.Create(name, 0.08 + 0.04 * colIndex, 0, function()
+          for _, lbl in ipairs(columns) do
+            if not IsValid(lbl) then
+              stopTimers()
+              return
+            end
+            lbl:SetText(randomSlotIcon())
+            lbl:SetTextColor(THEME.text)
+          end
+        end)
+      end
+
+      return stopTimers
+    end
+
     return panel, {
       slotBalance = balance,
       slotResult = result,
       slotReels = reelLabels,
       betEntry = betEntry,
       spinButton = spinButton,
+      startSlotSpin = startSlotSpin,
+      stopSlotSpin = function() end,
     }
   end
 
@@ -2286,6 +2344,8 @@ local function openPointshop(models, activeModel, defaultPrice)
   ui.currentModel = nil
   ui.currentPrice = nil
   ui.defaultPrice = defaultPrice or pointshopState.defaultPrice or MODEL_PRICE_DEFAULT
+  ui.slotReels = slotUi.slotReels
+  ui.stopSlotSpin = slotUi.stopSlotSpin
 
   if IsValid(ui.spinButton) then
     ui.spinButton.DoClick = function()
@@ -2294,10 +2354,16 @@ local function openPointshop(models, activeModel, defaultPrice)
       bet = math.Clamp(bet, SLOT_MIN_BET, SLOT_MAX_BET)
       ui.betEntry:SetValue(bet)
 
+      if ui.startSlotSpin then
+        ui.stopSlotSpin = ui.startSlotSpin() or function() end
+      end
       pointshopState.spinPending = true
       ui.spinButton:SetEnabled(false)
       ui.spinButton:SetText("Dreht...")
-      showSlotResult(ui, nil, "Räder drehen...", 0)
+      if IsValid(ui.slotResult) then
+        ui.slotResult:SetText("Räder drehen...")
+        ui.slotResult:SetTextColor(THEME.muted)
+      end
 
       net.Start("ST2_POINTS_SPIN")
       net.WriteUInt(bet, 16)
