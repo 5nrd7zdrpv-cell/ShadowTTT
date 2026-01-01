@@ -444,6 +444,17 @@ do -- Admin panel helpers
     net.SendToServer()
   end
 
+  local function sendAdminPointsGrant(sid, amount)
+    if not sid or sid == "" then return end
+    amount = math.floor(tonumber(amount) or 0)
+    if amount <= 0 then return end
+
+    net.Start("ST2_ADMIN_POINTS_GRANT")
+    net.WriteString(sid)
+    net.WriteInt(amount, 32)
+    net.SendToServer()
+  end
+
   local function sendPointshopAdminRequest()
     net.Start("ST2_PS_ADMIN_CONFIG_REQUEST")
     net.SendToServer()
@@ -848,6 +859,52 @@ do -- Admin panel helpers
       net.WriteString(sid)
       net.WriteString(class)
       net.SendToServer()
+    end
+
+    local pointsPanel = actionGrid:Add("DPanel")
+    pointsPanel:SetSize(230, 160)
+    pointsPanel.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(32, 32, 42, 230))
+    end
+
+    local pointsLabel = vgui.Create("DLabel", pointsPanel)
+    pointsLabel:Dock(TOP)
+    pointsLabel:DockMargin(10, 8, 10, 4)
+    pointsLabel:SetTall(20)
+    pointsLabel:SetFont("ST2.Subtitle")
+    pointsLabel:SetTextColor(THEME.text)
+    pointsLabel:SetText("Punkte geben")
+
+    local pointsHint = vgui.Create("DLabel", pointsPanel)
+    pointsHint:Dock(TOP)
+    pointsHint:DockMargin(10, 0, 10, 4)
+    pointsHint:SetTall(32)
+    pointsHint:SetFont("ST2.Body")
+    pointsHint:SetTextColor(THEME.muted)
+    pointsHint:SetWrap(true)
+    pointsHint:SetText("Gib Punkte an den ausgewählten Spieler.")
+
+    local pointsAmount = vgui.Create("DNumberWang", pointsPanel)
+    pointsAmount:Dock(TOP)
+    pointsAmount:DockMargin(10, 2, 10, 6)
+    pointsAmount:SetTall(30)
+    pointsAmount:SetMin(1)
+    pointsAmount:SetMax(1000000)
+    pointsAmount:SetDecimals(0)
+    pointsAmount:SetValue(100)
+    pointsAmount:SetFont("ST2.Body")
+
+    local pointsButton = vgui.Create("DButton", pointsPanel)
+    pointsButton:Dock(BOTTOM)
+    pointsButton:DockMargin(10, 8, 10, 10)
+    pointsButton:SetTall(34)
+    pointsButton:SetText("Punkte geben")
+    styleButton(pointsButton)
+    pointsButton.DoClick = function()
+      local sid = getSelectedSid()
+      local amount = math.floor(tonumber(pointsAmount:GetValue()) or 0)
+      if not sid or amount <= 0 then return end
+      sendAdminPointsGrant(sid, amount)
     end
 
     local recoilPanel = actionGrid:Add("DPanel")
