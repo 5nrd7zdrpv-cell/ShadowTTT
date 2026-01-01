@@ -404,22 +404,33 @@ do -- Admin panel helpers
     end
   end)
 
+  local function destroyAdminPanel()
+    local ui = ShadowTTT2.AdminUI
+    if ui and IsValid(ui.frame) then
+      ui.frame:Remove()
+    end
+    ShadowTTT2.AdminUI = nil
+  end
+
   local function openAdminPanel()
-    local f = createFrame("ShadowTTT2 Adminpanel", 1040, 640)
+    destroyAdminPanel()
+
+    local f = createFrame("ShadowTTT2 Adminpanel", 1080, 660)
     f.OnRemove = function()
       ShadowTTT2.AdminUI = nil
     end
 
     local header = vgui.Create("DLabel", f)
-    header:SetPos(16, 52)
-    header:SetSize(900, 24)
+    header:Dock(TOP)
+    header:DockMargin(16, 52, 16, 8)
+    header:SetTall(24)
     header:SetFont("ST2.Subtitle")
     header:SetTextColor(THEME.muted)
     header:SetText("Moderation & Traitor-Shop Verwaltung")
 
     local sheet = vgui.Create("DPropertySheet", f)
-    sheet:SetPos(12, 80)
-    sheet:SetSize(1016, 548)
+    sheet:Dock(FILL)
+    sheet:DockMargin(12, 0, 12, 12)
     sheet.Paint = function(_, w, h)
       draw.RoundedBox(12, 0, 0, w, h, Color(26, 26, 34, 230))
     end
@@ -1098,6 +1109,7 @@ do -- Admin panel helpers
     sheet:AddSheet("Traitor Shop", shopPanel, "icon16/plugin.png")
 
     ShadowTTT2.AdminUI = {
+      frame = f,
       list = list,
       search = search,
       players = {},
