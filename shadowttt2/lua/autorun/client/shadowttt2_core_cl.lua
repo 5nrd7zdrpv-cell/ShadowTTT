@@ -163,6 +163,48 @@ do -- Admin panel helpers
     net.SendToServer()
   end
 
+  local function populateWeaponDropdown(dropdown, weapons, filter, previousSelection)
+    if not IsValid(dropdown) then return end
+
+    if dropdown.Clear then dropdown:Clear() end
+    dropdown.SelectedClass = nil
+
+    local query = string.Trim(string.lower(filter or ""))
+    local count = 0
+    local keepSelection
+
+    for _, info in ipairs(weapons or {}) do
+      local class = info.class or ""
+      local name = info.name or ""
+      local haystack = string.lower(class .. " " .. name)
+      if query ~= "" and not string.find(haystack, query, 1, true) then continue end
+
+      local label = (name ~= "" and name ~= class) and (name .. " (" .. class .. ")") or class
+      dropdown:AddChoice(label, class)
+      count = count + 1
+      if previousSelection and previousSelection == class then
+        keepSelection = count
+      end
+    end
+
+    if count == 0 then
+      dropdown:SetValue("Keine Waffen gefunden")
+      return
+    end
+
+    if keepSelection then
+      dropdown:ChooseOptionID(keepSelection)
+      dropdown.SelectedClass = previousSelection
+    elseif dropdown.SetValue then
+      dropdown:SetValue(string.format("Waffe auswählen (%d)", count))
+    end
+  end
+
+  local function requestWeaponList()
+    net.Start("ST2_ADMIN_WEAPON_REQUEST")
+    net.SendToServer()
+  end
+
   local function sendRecoilMultiplier(value)
     net.Start("ST2_ADMIN_RECOIL_SET")
     net.WriteFloat(value or 0)
@@ -177,6 +219,23 @@ do -- Admin panel helpers
     if IsValid(ui.recoilSlider) then
       ui.recoilSlider:SetValue(math.Round(value or 0, 2))
     end
+  end)
+
+  net.Receive("ST2_ADMIN_WEAPON_LIST", function()
+    local ui = ShadowTTT2.AdminUI
+    if not ui then return end
+
+    local count = net.ReadUInt(12)
+    local entries = {}
+    for _ = 1, count do
+      table.insert(entries, {
+        class = net.ReadString(),
+        name = net.ReadString()
+      })
+    end
+
+    ui.weaponList = entries
+    populateWeaponDropdown(ui.weaponDropdown, entries, IsValid(ui.weaponSearch) and ui.weaponSearch:GetText() or "", ui.weaponDropdown and ui.weaponDropdown.SelectedClass)
   end)
 
   -- Admin open (client requests server concommand)
@@ -477,7 +536,7 @@ do -- Admin panel helpers
     end
 
     local giveWeaponPanel = actionGrid:Add("DPanel")
-    giveWeaponPanel:SetSize(230, 120)
+    giveWeaponPanel:SetSize(230, 190)
     giveWeaponPanel.Paint = function(_, w, h)
       draw.RoundedBox(12, 0, 0, w, h, Color(32, 32, 42, 230))
     end
@@ -490,18 +549,49 @@ do -- Admin panel helpers
     giveWeaponLabel:SetTextColor(THEME.text)
     giveWeaponLabel:SetText("Waffe geben")
 
-    local giveWeaponEntry = vgui.Create("DTextEntry", giveWeaponPanel)
-    giveWeaponEntry:Dock(TOP)
-    giveWeaponEntry:DockMargin(10, 0, 10, 8)
-    giveWeaponEntry:SetTall(30)
-    giveWeaponEntry:SetFont("ST2.Body")
-    giveWeaponEntry:SetTextColor(THEME.text)
-    if giveWeaponEntry.SetPlaceholderText then
-      giveWeaponEntry:SetPlaceholderText("Klasse eingeben (z.B. weapon_ttt_m16)")
+    local giveWeaponSearch = vgui.Create("DTextEntry", giveWeaponPanel)
+    giveWeaponSearch:Dock(TOP)
+    giveWeaponSearch:DockMargin(10, 0, 10, 6)
+    giveWeaponSearch:SetTall(26)
+    giveWeaponSearch:SetFont("ST2.Body")
+    giveWeaponSearch:SetTextColor(THEME.text)
+    if giveWeaponSearch.SetPlaceholderText then
+      giveWeaponSearch:SetPlaceholderText("Suche oder Klasse eingeben...")
     end
-    giveWeaponEntry.Paint = function(self, w, h)
+    giveWeaponSearch.Paint = function(self, w, h)
       draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
       self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
+    end
+
+    local giveWeaponDropdown = vgui.Create("DComboBox", giveWeaponPanel)
+    giveWeaponDropdown:Dock(TOP)
+    giveWeaponDropdown:DockMargin(10, 0, 10, 8)
+    giveWeaponDropdown:SetTall(34)
+    giveWeaponDropdown:SetFont("ST2.Body")
+    giveWeaponDropdown:SetValue("Waffe auswählen")
+    giveWeaponDropdown:SetSortItems(false)
+    giveWeaponDropdown:SetEditable(true)
+    giveWeaponDropdown:SetTextColor(THEME.text)
+    giveWeaponDropdown.OnSelect = function(_, _, _, data)
+      giveWeaponDropdown.SelectedClass = data
+    end
+    giveWeaponDropdown.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      draw.SimpleText(self:GetValue(), "ST2.Body", 10, h / 2, THEME.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+      draw.SimpleText("▼", "ST2.Body", w - 14, h / 2, THEME.muted, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+
+    local giveWeaponHint = vgui.Create("DLabel", giveWeaponPanel)
+    giveWeaponHint:Dock(TOP)
+    giveWeaponHint:DockMargin(10, 0, 10, 6)
+    giveWeaponHint:SetTall(18)
+    giveWeaponHint:SetFont("ST2.Body")
+    giveWeaponHint:SetTextColor(THEME.muted)
+    giveWeaponHint:SetText("Alle bekannten Waffen als Auswahl.")
+
+    giveWeaponSearch.OnValueChange = function(_, value)
+      local ui = ShadowTTT2.AdminUI
+      populateWeaponDropdown(giveWeaponDropdown, ui and ui.weaponList or {}, value, giveWeaponDropdown.SelectedClass)
     end
 
     local giveWeaponButton = vgui.Create("DButton", giveWeaponPanel)
@@ -512,7 +602,16 @@ do -- Admin panel helpers
     styleButton(giveWeaponButton)
     giveWeaponButton.DoClick = function()
       local sid = getSelectedSid()
-      local class = string.Trim(giveWeaponEntry:GetText() or "")
+      local class = giveWeaponDropdown.SelectedClass
+      if not class or class == "" then
+        class = string.Trim(giveWeaponSearch:GetText() or "")
+      end
+      if (not class or class == "") and giveWeaponDropdown.GetValue then
+        local raw = string.Trim(giveWeaponDropdown:GetValue() or "")
+        if raw ~= "" and raw ~= "Keine Waffen gefunden" and not string.find(raw, "Waffe auswählen", 1, true) then
+          class = raw
+        end
+      end
       if not sid or class == "" then return end
       net.Start("ST2_ADMIN_ACTION")
       net.WriteString("giveweapon")
@@ -782,11 +881,16 @@ do -- Admin panel helpers
       shopSearch = shopSearch,
       shopEntries = {},
       recoilSlider = recoilSlider,
+      weaponDropdown = giveWeaponDropdown,
+      weaponSearch = giveWeaponSearch,
+      weaponList = {},
     }
 
+    populateWeaponDropdown(giveWeaponDropdown, {}, "", nil)
     requestAdminPlayerList(list)
     sendTraitorShopRequest()
     requestRecoilMultiplier()
+    requestWeaponList()
   end
 
   net.Receive("ST2_ADMIN_OPEN", openAdminPanel)
