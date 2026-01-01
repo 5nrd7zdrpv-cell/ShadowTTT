@@ -818,6 +818,7 @@ end
 local MAP_VOTE_OPTION_COUNT = 6
 local MAP_VOTE_DURATION = 15
 local MAP_VOTE_TIMER = "ST2_MapVoteTimer"
+local MAP_SEARCH_PATHS = {"GAME", "MOD"}
 local mapVote = {
   active = false,
   endTime = 0,
@@ -850,11 +851,13 @@ end
 local function collectMaps()
   local maps = {}
   local function addMaps(pattern)
-    local found = file.Find(pattern, "GAME") or {}
-    for _, name in ipairs(found) do
-      local trimmed = string.StripExtension(name)
-      if trimmed and trimmed ~= "" then
-        maps[#maps + 1] = trimmed
+    for _, pathId in ipairs(MAP_SEARCH_PATHS) do
+      local found = file.Find(pattern, pathId) or {}
+      for _, name in ipairs(found) do
+        local trimmed = string.StripExtension(name)
+        if trimmed and trimmed ~= "" then
+          maps[#maps + 1] = trimmed
+        end
       end
     end
   end
@@ -1519,7 +1522,14 @@ net.Receive("ST2_ADMIN_MAP_CHANGE", function(_, ply)
   if not IsAdmin(ply) then return end
   local mapName = string.Trim(net.ReadString() or "")
   if mapName == "" then return end
-  if not file.Exists("maps/" .. mapName .. ".bsp", "GAME") then return end
+  local exists = false
+  for _, pathId in ipairs(MAP_SEARCH_PATHS) do
+    if file.Exists("maps/" .. mapName .. ".bsp", pathId) then
+      exists = true
+      break
+    end
+  end
+  if not exists then return end
 
   cancelMapVote()
   PrintMessage(HUD_PRINTTALK, string.format("[ShadowTTT2] %s wechselt die Map zu %s", IsValid(ply) and ply:Nick() or "Konsole", mapName))
