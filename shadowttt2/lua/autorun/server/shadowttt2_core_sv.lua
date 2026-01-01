@@ -10,7 +10,7 @@ ShadowTTT2.ServerCoreLoaded = true
 local function IsAdmin(ply) return IsValid(ply) and ShadowTTT2.Admins[ply:SteamID()] end
 local RECOIL_MULTIPLIER = 0.45
 local MODEL_DATA_PATH = "shadowttt2/playermodels.json"
-local MODEL_CACHE_VERSION = 1
+local MODEL_CACHE_VERSION = 2
 -- These models spam AE_CL_PLAYSOUND errors because their animations reference empty sound names.
 local BLACKLISTED_MODELS = {
   ["models/alyx.mdl"] = true,
@@ -206,6 +206,13 @@ hook.Add("InitPostEntity", "ST2_PS_PUSH_WORKSHOP_LATE", function()
   PushWorkshopDownloads(1)
 end)
 
+hook.Add("InitPostEntity", "ST2_PS_REBUILD_MODELS_LATE", function()
+  timer.Simple(2, function()
+    rebuildModelList()
+    broadcastModelSnapshots()
+  end)
+end)
+
 util.AddNetworkString("ST2_ADMIN_REQUEST")
 util.AddNetworkString("ST2_ADMIN_OPEN")
 util.AddNetworkString("ST2_ADMIN_PLAYERLIST")
@@ -260,6 +267,12 @@ local function sendModelSnapshot(ply)
   net.Send(ply)
 end
 
+local function broadcastModelSnapshots()
+  for _, tgt in ipairs(player.GetAll()) do
+    sendModelSnapshot(tgt)
+  end
+end
+
 local function applyStoredModel(ply)
   if not IsValid(ply) then return end
   local data = getModelData()
@@ -276,6 +289,18 @@ end
 concommand.Add("shadow_admin_open", function(ply)
   if not IsAdmin(ply) then return end
   net.Start("ST2_ADMIN_OPEN") net.Send(ply)
+end)
+
+concommand.Add("shadowttt2_rebuild_models", function(ply)
+  if IsValid(ply) and not IsAdmin(ply) then return end
+  rebuildModelList()
+  broadcastModelSnapshots()
+
+  if IsValid(ply) then
+    ply:ChatPrint("[ShadowTTT2] Model list rebuilt and pushed to players")
+  else
+    print("[ShadowTTT2] Model list rebuilt and pushed to players")
+  end
 end)
 
 net.Receive("ST2_ADMIN_REQUEST", function(_, ply)
