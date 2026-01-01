@@ -1102,7 +1102,7 @@ do -- Admin panel helpers
     local shopAdd = vgui.Create("DPanel", shopLeft)
     shopAdd:Dock(BOTTOM)
     shopAdd:DockMargin(10, 0, 10, 6)
-    shopAdd:SetTall(70)
+    shopAdd:SetTall(140)
     shopAdd.Paint = function(_, w, h)
       draw.RoundedBox(8, 0, 0, w, h, Color(32, 32, 42, 230))
     end
