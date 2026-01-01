@@ -1537,7 +1537,12 @@ local function updateMapOptionPanel(ui, mapName, votes)
 end
 
 local function applyMapVoteState(options, endTime)
-  if not options or #options == 0 then return end
+  if not options or #options == 0 then
+    if IsValid(mapVoteFrame) then
+      mapVoteFrame:Close()
+    end
+    return
+  end
 
   local frame = ensureMapVoteFrame()
   local ui = frame.ShadowMapVote

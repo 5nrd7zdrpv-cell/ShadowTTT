@@ -515,6 +515,16 @@ local function resetMapVote()
   mapVote.voterChoice = {}
 end
 
+local function cancelMapVote()
+  timer.Remove(MAP_VOTE_TIMER)
+  resetMapVote()
+
+  net.Start("ST2_MAPVOTE_STATE")
+    net.WriteUInt(0, 6)
+    net.WriteFloat(CurTime())
+  net.Broadcast()
+end
+
 local function collectMaps()
   local maps = {}
   local function addMaps(pattern)
@@ -708,6 +718,10 @@ hook.Add("TTTEndRound", "ST2_MapVoteTrigger", function()
   end)
 end)
 
+hook.Add("TTTPrepareRound", "ST2_MapVoteResetOnPrepare", function()
+  cancelMapVote()
+end)
+
 local function applyStoredModel(ply)
   if not IsValid(ply) then return end
   local data = getModelData()
@@ -730,7 +744,7 @@ local function sendRecoilMultiplier(ply)
 end
 
 local function endCurrentRound()
-  local winConst = _G.WIN_NONE or _G.WIN_TIMELIMIT or _G.WIN_INNOCENT or _G.WIN_TRAITOR or 0
+  local winConst = _G.WIN_TIMELIMIT or _G.WIN_NONE or _G.WIN_INNOCENT or _G.WIN_TRAITOR or 0
 
   if isfunction(EndRound) then
     EndRound(winConst)
@@ -877,6 +891,7 @@ net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   if not IsAdmin(ply) then return end
   local act = net.ReadString()
   if act == "endround" then
+    cancelMapVote()
     endCurrentRound()
     return
   end
