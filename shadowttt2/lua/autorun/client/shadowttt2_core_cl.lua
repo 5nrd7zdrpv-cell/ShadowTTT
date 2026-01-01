@@ -272,6 +272,7 @@ do -- Admin panel helpers
 
     ui.weaponList = entries
     populateWeaponDropdown(ui.weaponDropdown, entries, IsValid(ui.weaponSearch) and ui.weaponSearch:GetText() or "", ui.weaponDropdown and ui.weaponDropdown.SelectedClass)
+    populateWeaponDropdown(ui.shopWeaponDropdown, entries, IsValid(ui.shopWeaponSearch) and ui.shopWeaponSearch:GetText() or "", ui.shopWeaponDropdown and ui.shopWeaponDropdown.SelectedClass)
   end)
 
   net.Receive("ST2_ADMIN_BANLIST", function()
@@ -982,6 +983,41 @@ do -- Admin panel helpers
     shopAddLabel:SetTextColor(THEME.text)
     shopAddLabel:SetText("Manuelles Item hinzufügen (Klassenname)")
 
+    local shopWeaponSearch = vgui.Create("DTextEntry", shopAdd)
+    shopWeaponSearch:Dock(TOP)
+    shopWeaponSearch:DockMargin(8, 0, 8, 4)
+    shopWeaponSearch:SetTall(24)
+    shopWeaponSearch:SetFont("ST2.Body")
+    shopWeaponSearch:SetTextColor(THEME.text)
+    shopWeaponSearch:SetPlaceholderText("Waffe im Dropdown suchen...")
+    shopWeaponSearch.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      self:DrawTextEntryText(THEME.text, THEME.accent, THEME.text)
+    end
+
+    local shopWeaponDropdown = vgui.Create("DComboBox", shopAdd)
+    shopWeaponDropdown:Dock(TOP)
+    shopWeaponDropdown:DockMargin(8, 0, 8, 6)
+    shopWeaponDropdown:SetTall(28)
+    shopWeaponDropdown:SetFont("ST2.Body")
+    shopWeaponDropdown:SetSortItems(false)
+    shopWeaponDropdown:SetValue("Waffe auswählen")
+    if shopWeaponDropdown.SetEditable then
+      shopWeaponDropdown:SetEditable(true)
+    end
+    shopWeaponDropdown:SetTextColor(THEME.text)
+    shopWeaponDropdown.OnSelect = function(_, _, _, data)
+      shopWeaponDropdown.SelectedClass = data
+      if IsValid(shopAddEntry) then
+        shopAddEntry:SetText(data or "")
+      end
+    end
+    shopWeaponDropdown.Paint = function(self, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(22, 22, 30, 230))
+      draw.SimpleText(self:GetValue(), "ST2.Body", 8, h / 2, THEME.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+      draw.SimpleText("▼", "ST2.Body", w - 12, h / 2, THEME.muted, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+
     local shopAddRow = vgui.Create("DPanel", shopAdd)
     shopAddRow:Dock(FILL)
     shopAddRow:DockMargin(8, 0, 8, 8)
@@ -1005,7 +1041,19 @@ do -- Admin panel helpers
     shopAddButton:SetText("Hinzufügen")
     styleButton(shopAddButton)
     shopAddButton.DoClick = function()
+      local ui = ShadowTTT2.AdminUI
+      populateWeaponDropdown(shopWeaponDropdown, ui and ui.weaponList or {}, IsValid(shopWeaponSearch) and shopWeaponSearch:GetText() or "", shopWeaponDropdown.SelectedClass)
+
       local id = string.Trim(shopAddEntry:GetText() or "")
+      if id == "" and shopWeaponDropdown and shopWeaponDropdown.GetValue then
+        local selected = string.Trim(shopWeaponDropdown:GetValue() or "")
+        if selected ~= "" and selected ~= "Keine Waffen gefunden" and not string.find(selected, "Waffe auswählen", 1, true) then
+          id = selected
+        end
+      end
+      if id == "" and shopWeaponDropdown then
+        id = shopWeaponDropdown.SelectedClass or ""
+      end
       if id == "" then return end
       sendTraitorShopAdd(id)
       shopAddEntry:SetText("")
@@ -1114,6 +1162,11 @@ do -- Admin panel helpers
       populateShopList(shopList, ui.shopEntries or {}, value)
     end
 
+    shopWeaponSearch.OnValueChange = function(_, value)
+      local ui = ShadowTTT2.AdminUI
+      populateWeaponDropdown(shopWeaponDropdown, ui and ui.weaponList or {}, value, shopWeaponDropdown.SelectedClass)
+    end
+
     sheet:AddSheet("Moderation", moderation, "icon16/user.png")
     sheet:AddSheet("Traitor Shop", shopPanel, "icon16/plugin.png")
 
@@ -1128,6 +1181,8 @@ do -- Admin panel helpers
       recoilSlider = recoilSlider,
       weaponDropdown = giveWeaponDropdown,
       weaponSearch = giveWeaponSearch,
+      shopWeaponDropdown = shopWeaponDropdown,
+      shopWeaponSearch = shopWeaponSearch,
       weaponList = {},
       banList = banList,
       banSearch = banSearch,
@@ -1135,6 +1190,7 @@ do -- Admin panel helpers
     }
 
     populateWeaponDropdown(giveWeaponDropdown, {}, "", nil)
+    populateWeaponDropdown(shopWeaponDropdown, {}, "", nil)
     requestAdminPlayerList(list)
     sendTraitorShopRequest()
     requestRecoilMultiplier()
