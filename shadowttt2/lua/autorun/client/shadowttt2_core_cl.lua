@@ -1069,3 +1069,215 @@ net.Receive("ST2_PS_MODELS", function()
     openPointshop(models, activeModel)
   end
 end)
+
+local mapVoteFrame
+local function sendMapVoteChoice(mapName)
+  net.Start("ST2_MAPVOTE_VOTE")
+  net.WriteString(mapName or "")
+  net.SendToServer()
+end
+
+local function ensureMapVoteFrame()
+  if IsValid(mapVoteFrame) then return mapVoteFrame end
+
+  local f = createFrame("Map Auswahl", 760, 540)
+  mapVoteFrame = f
+  f.OnRemove = function()
+    if mapVoteFrame == f then
+      mapVoteFrame = nil
+    end
+  end
+
+  local header = vgui.Create("DLabel", f)
+  header:SetPos(16, 52)
+  header:SetSize(700, 22)
+  header:SetFont("ST2.Subtitle")
+  header:SetTextColor(THEME.muted)
+  header:SetText("Letzte Runde gespielt – wähle die nächste Map für den Server.")
+
+  local status = vgui.Create("DLabel", f)
+  status:SetPos(16, 78)
+  status:SetSize(700, 20)
+  status:SetFont("ST2.Body")
+  status:SetTextColor(THEME.text)
+  status:SetText("Starte Mapvote...")
+
+  local scroll = vgui.Create("DScrollPanel", f)
+  scroll:SetPos(12, 110)
+  scroll:SetSize(736, 400)
+  scroll.Paint = function(_, w, h)
+    draw.RoundedBox(12, 0, 0, w, h, Color(26, 26, 34, 230))
+  end
+  if IsValid(scroll.VBar) then
+    scroll.VBar.Paint = function(_, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(20, 20, 26, 150))
+    end
+    scroll.VBar.btnGrip.Paint = function(_, w, h)
+      draw.RoundedBox(6, 0, 0, w, h, THEME.accent)
+    end
+  end
+
+  local list = scroll:Add("DIconLayout")
+  list:Dock(FILL)
+  list:SetSpaceX(10)
+  list:SetSpaceY(10)
+  list:SetStretchWidth(true)
+  list:DockMargin(10, 10, 10, 10)
+
+  f.ShadowMapVote = {
+    statusLabel = status,
+    list = list,
+    optionPanels = {},
+    selected = nil,
+    endTime = 0,
+    locked = false,
+    winner = nil,
+    totals = 0
+  }
+
+  return f
+end
+
+local function updateMapOptionPanel(ui, mapName, votes)
+  local panel = ui.optionPanels[mapName]
+  if not IsValid(panel) then
+    panel = ui.list:Add("DButton")
+    panel:SetTall(90)
+    panel:SetText("")
+    panel:SetTooltip(mapName)
+    panel.ShadowMap = mapName
+    panel.DoClick = function()
+      if ui.locked then return end
+      ui.selected = mapName
+      sendMapVoteChoice(mapName)
+    end
+    ui.optionPanels[mapName] = panel
+  end
+
+  panel.ShadowVotes = votes or 0
+  panel.Paint = function(self, w, h)
+    local isSelected = ui.selected == mapName
+    local isWinner = ui.winner and ui.winner == mapName
+    local base = THEME.panel
+    if isWinner then
+      base = Color(60, 120, 60, 230)
+    elseif isSelected then
+      base = Color(40, 70, 110, 230)
+    end
+
+    draw.RoundedBox(12, 0, 0, w, h, base)
+    draw.SimpleText(mapName, "ST2.Subtitle", 12, 12, THEME.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+
+    local voteText = string.format("%d Stimme%s", self.ShadowVotes or 0, (self.ShadowVotes or 0) == 1 and "" or "n")
+    draw.SimpleText(voteText, "ST2.Body", 12, 44, THEME.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+
+    local total = math.max(ui.totals, 1)
+    local frac = math.Clamp((self.ShadowVotes or 0) / total, 0, 1)
+    draw.RoundedBox(8, 12, h - 22, (w - 24) * frac, 12, ui.winner and THEME.accent or THEME.accent_soft)
+
+    if isSelected then
+      surface.SetDrawColor(THEME.accent_soft)
+      surface.DrawOutlinedRect(1, 1, w - 2, h - 2, 2)
+    end
+  end
+end
+
+local function applyMapVoteState(options, endTime)
+  if not options or #options == 0 then return end
+
+  local frame = ensureMapVoteFrame()
+  local ui = frame.ShadowMapVote
+  ui.endTime = endTime or CurTime()
+  ui.locked = false
+  ui.winner = nil
+
+  local totalVotes = 0
+  local seen = {}
+  for _, opt in ipairs(options) do
+    totalVotes = totalVotes + (opt.votes or 0)
+    seen[opt.name] = true
+    updateMapOptionPanel(ui, opt.name, opt.votes or 0)
+  end
+  ui.totals = math.max(totalVotes, 1)
+
+  for name, panel in pairs(ui.optionPanels) do
+    if not seen[name] and IsValid(panel) then
+      panel:Remove()
+      ui.optionPanels[name] = nil
+    end
+  end
+
+  if IsValid(ui.statusLabel) then
+    local remaining = math.max(0, math.ceil(ui.endTime - CurTime()))
+    ui.statusLabel:SetText(string.format("Abstimmung läuft... (%ds)", remaining))
+  end
+
+  frame:MakePopup()
+  frame:RequestFocus()
+end
+
+local function applyMapVoteResult(winner, options)
+  if not winner or winner == "" then return end
+  local frame = ensureMapVoteFrame()
+  local ui = frame.ShadowMapVote
+  ui.locked = true
+  ui.winner = winner
+  ui.endTime = CurTime()
+
+  if options and #options > 0 then
+    ui.totals = 0
+    for _, opt in ipairs(options) do
+      ui.totals = ui.totals + (opt.votes or 0)
+      updateMapOptionPanel(ui, opt.name, opt.votes or 0)
+    end
+  end
+
+  if IsValid(ui.statusLabel) then
+    ui.statusLabel:SetText("Gewählte Map: " .. winner .. " (Wechsel in Kürze)")
+  end
+
+  timer.Simple(5, function()
+    if IsValid(frame) then
+      frame:Close()
+    end
+  end)
+end
+
+net.Receive("ST2_MAPVOTE_STATE", function()
+  local count = net.ReadUInt(6)
+  local options = {}
+  for i = 1, count do
+    options[i] = {
+      name = net.ReadString(),
+      votes = net.ReadUInt(12)
+    }
+  end
+  local endTime = net.ReadFloat()
+
+  applyMapVoteState(options, endTime)
+end)
+
+net.Receive("ST2_MAPVOTE_RESULT", function()
+  local winner = net.ReadString()
+  local count = net.ReadUInt(6)
+  local options = {}
+  for i = 1, count do
+    options[i] = {
+      name = net.ReadString(),
+      votes = net.ReadUInt(12)
+    }
+  end
+
+  applyMapVoteResult(winner, options)
+end)
+
+hook.Add("Think", "ST2_MapVoteCountdown", function()
+  if not IsValid(mapVoteFrame) then return end
+  local ui = mapVoteFrame.ShadowMapVote
+  if not ui or ui.locked then return end
+
+  local remaining = math.max(0, math.ceil((ui.endTime or 0) - CurTime()))
+  if IsValid(ui.statusLabel) then
+    ui.statusLabel:SetText(string.format("Abstimmung läuft... (%ds)", remaining))
+  end
+end)
