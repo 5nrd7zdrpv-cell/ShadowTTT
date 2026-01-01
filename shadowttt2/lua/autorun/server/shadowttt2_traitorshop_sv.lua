@@ -42,7 +42,11 @@ local ShopConfig = {
 local TRAITOR_ROLE = ROLE_TRAITOR or 2
 
 local function isAdmin(ply)
-  return IsValid(ply) and ShadowTTT2.Admins and ShadowTTT2.Admins[ply:SteamID()]
+  if ShadowTTT2 and ShadowTTT2.IsAdmin then
+    return ShadowTTT2.IsAdmin(ply)
+  end
+
+  return IsValid(ply) and ShadowTTT2.Admins and (ShadowTTT2.Admins[ply:SteamID()] or ShadowTTT2.Admins[ply:SteamID64()])
 end
 
 local function ensureDataFolder()

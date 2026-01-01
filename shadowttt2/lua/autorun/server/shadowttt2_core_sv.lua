@@ -9,7 +9,19 @@ ShadowTTT2.Bans = ShadowTTT2.Bans or {}
 ShadowTTT2.Analytics = ShadowTTT2.Analytics or {}
 ShadowTTT2.ServerCoreLoaded = true
 
-local function IsAdmin(ply) return IsValid(ply) and ShadowTTT2.Admins[ply:SteamID()] end
+local function IsAdmin(ply)
+  if not IsValid(ply) then return false end
+
+  local admins = ShadowTTT2.Admins or {}
+  if admins[ply:SteamID()] or admins[ply:SteamID64()] then
+    return true
+  end
+
+  if ply.IsSuperAdmin and ply:IsSuperAdmin() then return true end
+  if ply.IsAdmin and ply:IsAdmin() then return true end
+  return false
+end
+ShadowTTT2.IsAdmin = ShadowTTT2.IsAdmin or IsAdmin
 local RECOIL_MULTIPLIER_DEFAULT = 0.35
 local function clampRecoilMultiplier(value)
   if not isnumber(value) then return RECOIL_MULTIPLIER_DEFAULT end
