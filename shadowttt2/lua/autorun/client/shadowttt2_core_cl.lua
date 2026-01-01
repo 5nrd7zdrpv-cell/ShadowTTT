@@ -60,7 +60,16 @@ local function buildSlotMaterial(def)
   local svg = readSlotSvg(def)
   if not svg then return nil end
 
-  local html = [[<html><body style="margin:0;padding:0;overflow:hidden;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0);">]] .. svg .. [[</body></html>]]
+  local encoded = util and util.Base64Encode and util.Base64Encode(svg) or nil
+  local body = [[<body style="margin:0;padding:0;overflow:hidden;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0);">]]
+  local html
+
+  if encoded then
+    html = [[<html><head><style>img{width:128px;height:128px;}</style></head>]] .. body .. [[<img src="data:image/svg+xml;base64:]] .. encoded .. [["></body></html>]]
+  else
+    html = [[<html>]] .. body .. svg .. [[</body></html>]]
+  end
+
   local mat = CreateHTMLMaterial("st2_slot_svg_" .. def.id, 128, 128, html)
   if not mat then return nil end
 
@@ -2398,7 +2407,7 @@ local function openPointshop(models, activeModel, defaultPrice)
     betEntry:SetWide(180)
     betEntry:SetMin(SLOT_MIN_BET)
     betEntry:SetMax(SLOT_MAX_BET)
-    betEntry:SetValue(math.floor((SLOT_MIN_BET + SLOT_MAX_BET) / 2))
+    betEntry:SetValue(SLOT_MIN_BET)
     betEntry:SetDecimals(0)
     betEntry:SetFont("ST2.Body")
 

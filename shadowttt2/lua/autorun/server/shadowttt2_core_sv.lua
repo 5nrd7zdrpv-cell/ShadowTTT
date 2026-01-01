@@ -96,6 +96,14 @@ local SLOT_SYMBOLS = {
   {id = "star", icon = "⭐", weight = 18, triple = 5, pair = 2},
   {id = "cherry", icon = "🍒", weight = 22, triple = 4, pair = 2}
 }
+local SLOT_SVG_FILES = {
+  "materials/shadowttt2/slots/cherry.svg",
+  "materials/shadowttt2/slots/lemon.svg",
+  "materials/shadowttt2/slots/bell.svg",
+  "materials/shadowttt2/slots/star.svg",
+  "materials/shadowttt2/slots/diamond.svg",
+  "materials/shadowttt2/slots/seven.svg"
+}
 -- These models spam AE_CL_PLAYSOUND errors because their animations reference empty sound names.
 local BLACKLISTED_MODELS = {
   ["models/alyx.mdl"] = true,
@@ -114,6 +122,15 @@ local function isModelAllowed(mdl)
   if BLACKLISTED_MODELS[string.lower(mdl)] then return false end
   return util.IsValidModel(mdl)
 end
+
+local function addSlotAssetsToDownloads()
+  for _, path in ipairs(SLOT_SVG_FILES) do
+    if file.Exists(path, "GAME") then
+      resource.AddFile(path)
+    end
+  end
+end
+addSlotAssetsToDownloads()
 
 local function normalizeModelPrice(value)
   local num = tonumber(value)
