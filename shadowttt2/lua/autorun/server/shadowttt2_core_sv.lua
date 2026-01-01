@@ -1057,6 +1057,110 @@ hook.Add("TTTPrepareRound", "ST2_MapVoteResetOnPrepare", function()
   cancelMapVote()
 end)
 
+local ROUND_WAIT = _G.ROUND_WAIT or _G.ROUND_WAITING or 1
+local ROUND_PREP = _G.ROUND_PREP or 2
+local ROUND_ACTIVE = _G.ROUND_ACTIVE or 3
+local ROUND_POST = _G.ROUND_POST or 4
+local roundMonitor = {
+  state = nil,
+  lastChange = CurTime(),
+  lastRestart = 0
+}
+
+local function currentRoundState()
+  if isfunction(_G.GetRoundState) then
+    local ok, state = pcall(_G.GetRoundState)
+    if ok and state ~= nil then return state end
+  end
+
+  if GAMEMODE and isfunction(GAMEMODE.GetRoundState) then
+    local ok, state = pcall(function() return GAMEMODE:GetRoundState() end)
+    if ok and state ~= nil then return state end
+  end
+
+  return roundMonitor.state or ROUND_WAIT
+end
+
+local function markRoundState(state)
+  if state and state ~= roundMonitor.state then
+    roundMonitor.state = state
+    roundMonitor.lastChange = CurTime()
+  end
+end
+
+local function hasEnoughPlayers()
+  local minPlayers = GetConVar("ttt_minimum_players")
+  local required = math.max(1, minPlayers and minPlayers:GetInt() or 2)
+  local humans = 0
+  for _, ply in ipairs(player.GetAll()) do
+    if IsValid(ply) and ply:IsPlayer() and not ply:IsBot() then
+      humans = humans + 1
+    end
+  end
+  return humans >= required
+end
+
+local function prepTimeout()
+  local prep = GetConVar("ttt_preptime_seconds")
+  return math.max(20, (prep and prep:GetInt() or 30) + 15)
+end
+
+local function postTimeout()
+  local post = GetConVar("ttt_posttime_seconds")
+  return math.max(20, (post and post:GetInt() or 10) + 10)
+end
+
+local function waitTimeout()
+  return 45
+end
+
+local function forceRoundRestart(reason)
+  if roundMonitor.lastRestart > 0 and CurTime() - roundMonitor.lastRestart < 10 then return end
+
+  roundMonitor.lastRestart = CurTime()
+  cancelMapVote()
+  print(string.format("[ShadowTTT2] Round watchdog triggered: %s", reason or "Unbekannt"))
+  PrintMessage(HUD_PRINTTALK, "[ShadowTTT2] Runde wird neu gestartet (Watchdog).")
+  RunConsoleCommand("ttt_roundrestart")
+end
+
+local function checkRoundHealth()
+  local state = currentRoundState()
+  markRoundState(state)
+
+  if mapVote and mapVote.active then return end
+
+  if not hasEnoughPlayers() then
+    roundMonitor.lastChange = CurTime()
+    return
+  end
+
+  local elapsed = CurTime() - (roundMonitor.lastChange or CurTime())
+  if state == ROUND_WAIT and elapsed > waitTimeout() then
+    forceRoundRestart("Warten auf Spieler zu lange")
+  elseif state == ROUND_PREP and elapsed > prepTimeout() then
+    forceRoundRestart("Vorbereitungsphase hängt")
+  elseif state == ROUND_POST and elapsed > postTimeout() then
+    forceRoundRestart("Nachbereitungsphase hängt")
+  end
+end
+
+timer.Create("ST2_RoundWatchdog", 5, 0, checkRoundHealth)
+hook.Add("PlayerInitialSpawn", "ST2_RoundWatchdogOnJoin", function()
+  timer.Simple(2, function()
+    checkRoundHealth()
+  end)
+end)
+hook.Add("TTTPrepareRound", "ST2_RoundWatchdogPrep", function()
+  markRoundState(ROUND_PREP)
+end)
+hook.Add("TTTBeginRound", "ST2_RoundWatchdogBegin", function()
+  markRoundState(ROUND_ACTIVE)
+end)
+hook.Add("TTTEndRound", "ST2_RoundWatchdogPost", function()
+  markRoundState(ROUND_POST)
+end)
+
 local function applyStoredModel(ply)
   if not IsValid(ply) then return end
   local data = getModelData()
