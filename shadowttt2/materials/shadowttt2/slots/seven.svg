@@ -1,0 +1,18 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sevenRed" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff8a80"/>
+      <stop offset="50%" stop-color="#e53935"/>
+      <stop offset="100%" stop-color="#b71c1c"/>
+    </linearGradient>
+    <linearGradient id="sevenEdge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffcdd2"/>
+      <stop offset="100%" stop-color="#ad1b1b"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="18" fill="#0c0f18"/>
+  <path d="M30 28 Q40 20 64 20 L98 20 L74 70 L56 108" fill="url(#sevenRed)" stroke="url(#sevenEdge)" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M38 36 L90 36" stroke="#ffdce0" stroke-width="6" stroke-linecap="round"/>
+  <path d="M58 78 L82 30" stroke="#f8bbd0" stroke-width="5" stroke-linecap="round"/>
+  <path d="M42 94 Q60 102 72 104" stroke="#ffdce0" stroke-width="6" stroke-linecap="round"/>
+</svg>

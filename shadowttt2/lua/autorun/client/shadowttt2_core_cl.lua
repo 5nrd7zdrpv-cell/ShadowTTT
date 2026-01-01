@@ -20,9 +20,100 @@ local SLOT_MAX_BET = 1000
 local SLOT_SPIN_TIMEOUT = 1.25
 local MODEL_PRICE_DEFAULT = 100
 local SLOT_FALLBACK_ICONS = {"🍒", "🍋", "🔔", "⭐", "💎", "7", "BAR"}
+local SLOT_SVG_ICONS = {
+  {id = "cherry", label = "Kirsche", icon = "🍒", svg = "materials/shadowttt2/slots/cherry.svg"},
+  {id = "lemon", label = "Zitrone", icon = "🍋", svg = "materials/shadowttt2/slots/lemon.svg"},
+  {id = "bell", label = "Glocke", icon = "🔔", svg = "materials/shadowttt2/slots/bell.svg"},
+  {id = "star", label = "Stern", icon = "⭐", svg = "materials/shadowttt2/slots/star.svg"},
+  {id = "diamond", label = "Diamant", icon = "💎", svg = "materials/shadowttt2/slots/diamond.svg"},
+  {id = "seven", label = "Sieben", icon = "7", svg = "materials/shadowttt2/slots/seven.svg"}
+}
+local SLOT_ICON_LOOKUP = {}
+for _, def in ipairs(SLOT_SVG_ICONS) do
+  SLOT_ICON_LOOKUP[def.id] = def
+end
 
-local function randomSlotIcon()
-  return SLOT_FALLBACK_ICONS[math.random(#SLOT_FALLBACK_ICONS)] or "?"
+local slotSvgCache = {}
+local slotMaterialCache = {}
+
+local function readSlotSvg(def)
+  if not def or not def.id then return nil end
+  if slotSvgCache[def.id] ~= nil then
+    return slotSvgCache[def.id]
+  end
+
+  local svgPath = def.svg
+  if svgPath and file.Exists(svgPath, "GAME") then
+    local svg = file.Read(svgPath, "GAME")
+    if isstring(svg) and svg ~= "" then
+      slotSvgCache[def.id] = svg
+      return svg
+    end
+  end
+
+  slotSvgCache[def.id] = false
+  return nil
+end
+
+local function buildSlotMaterial(def)
+  if not def or not def.id or not CreateHTMLMaterial then return nil end
+  local svg = readSlotSvg(def)
+  if not svg then return nil end
+
+  local html = [[<html><body style="margin:0;padding:0;overflow:hidden;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0);">]] .. svg .. [[</body></html>]]
+  local mat = CreateHTMLMaterial("st2_slot_svg_" .. def.id, 128, 128, html)
+  if not mat then return nil end
+
+  mat:SetInt("$vertexcolor", 1)
+  mat:SetInt("$additive", 0)
+  mat:SetInt("$nocull", 1)
+  return mat
+end
+
+local function getSlotMaterial(id)
+  if not id or id == "" then return nil end
+  if slotMaterialCache[id] ~= nil then
+    return slotMaterialCache[id] or nil
+  end
+
+  local def = SLOT_ICON_LOOKUP[id]
+  if not def then
+    slotMaterialCache[id] = false
+    return nil
+  end
+
+  local mat = buildSlotMaterial(def)
+  slotMaterialCache[id] = mat or false
+  return mat
+end
+
+local function resolveSlotSymbol(sym)
+  if istable(sym) then
+    if sym.id and SLOT_ICON_LOOKUP[sym.id] then
+      return SLOT_ICON_LOOKUP[sym.id]
+    end
+    if sym.id or sym.icon then
+      return {
+        id = sym.id or sym.icon or "mystery",
+        icon = sym.icon or sym.id or "?",
+        label = sym.icon or sym.id or "?"
+      }
+    end
+  end
+
+  if #SLOT_SVG_ICONS > 0 then
+    return SLOT_SVG_ICONS[math.random(#SLOT_SVG_ICONS)]
+  end
+
+  return {icon = SLOT_FALLBACK_ICONS[math.random(#SLOT_FALLBACK_ICONS)] or "?"}
+end
+
+local function randomSlotSymbol()
+  if #SLOT_SVG_ICONS > 0 then
+    return SLOT_SVG_ICONS[math.random(#SLOT_SVG_ICONS)] or {icon = "?"}
+  end
+
+  return {icon = SLOT_FALLBACK_ICONS[math.random(#SLOT_FALLBACK_ICONS)] or "?"}
 end
 
 surface.CreateFont("ST2.Title", {font = "Roboto", size = 24, weight = 800})
@@ -31,6 +122,46 @@ surface.CreateFont("ST2.Body", {font = "Roboto", size = 16, weight = 500})
 surface.CreateFont("ST2.Button", {font = "Roboto", size = 17, weight = 700})
 surface.CreateFont("ST2.Mono", {font = "Consolas", size = 15, weight = 500})
 surface.CreateFont("ST2.SlotReel", {font = "Roboto", size = 44, weight = 800})
+
+local function paintSlotIcon(self, w, h)
+  local icon = self.ShadowSlotIcon
+  local tint = icon and icon.color or THEME.text
+  if icon and icon.mat and icon.mat ~= false and not icon.mat:IsError() then
+    local size = math.min(w, h) - 12
+    surface.SetMaterial(icon.mat)
+    surface.SetDrawColor(tint)
+    surface.DrawTexturedRect((w - size) / 2, (h - size) / 2, size, size)
+    return
+  end
+
+  draw.SimpleText(icon and icon.text or "?", "ST2.SlotReel", w / 2, h / 2, tint, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+end
+
+local function setSlotPanelSymbol(panel, sym, highlight)
+  if not IsValid(panel) then return end
+  local def = resolveSlotSymbol(sym)
+  local mat = def and def.id and getSlotMaterial(def.id)
+  panel.ShadowSlotIcon = {
+    id = def and def.id or nil,
+    mat = mat or nil,
+    text = def and (def.icon or def.label or def.id) or "?",
+    label = def and (def.label or def.icon or def.id) or "?",
+    color = highlight and THEME.accent_soft or THEME.text
+  }
+  panel:SetTooltip(panel.ShadowSlotIcon.label or "")
+end
+
+local function createSlotIconCell(parent)
+  local cell = vgui.Create("DPanel", parent)
+  cell:SetTall(52)
+  cell:SetPaintBackground(false)
+  cell.Paint = paintSlotIcon
+  cell.SetSlotSymbol = function(self, sym, highlight)
+    setSlotPanelSymbol(self, sym, highlight)
+  end
+  cell:SetSlotSymbol(randomSlotSymbol(), false)
+  return cell
+end
 
 local function styleButton(btn)
   btn:SetFont("ST2.Button")
@@ -1840,20 +1971,18 @@ local function showSlotResult(ui, symbols, text, payout)
   end
 
   if istable(ui.slotReels) then
-    local accentColor = win and THEME.accent_soft or color_white
     for i = 1, 3 do
       local col = ui.slotReels[i]
       if not istable(col) then continue end
       local sym = istable(symbols) and symbols[i] or nil
-      local midIcon = sym and (sym.icon or sym.id or "?") or randomSlotIcon()
-      local topIcon = randomSlotIcon()
-      local bottomIcon = randomSlotIcon()
+      local midIcon = resolveSlotSymbol(sym)
+      local topIcon = randomSlotSymbol()
+      local bottomIcon = randomSlotSymbol()
 
       for idx, icon in ipairs({topIcon, midIcon, bottomIcon}) do
         local lbl = col[idx]
         if not IsValid(lbl) then continue end
-        lbl:SetText(icon)
-        lbl:SetTextColor(idx == 2 and accentColor or THEME.text)
+        lbl:SetSlotSymbol(icon, idx == 2 and win)
       end
     end
   end
@@ -2241,14 +2370,9 @@ local function openPointshop(models, activeModel, defaultPrice)
 
       reelLabels[i] = {}
       for row = 1, 3 do
-        local lbl = vgui.Create("DLabel", slotBox)
+        local lbl = createSlotIconCell(slotBox)
         lbl:Dock(TOP)
         lbl:DockMargin(8, row == 1 and 10 or 4, 8, row == 3 and 10 or 4)
-        lbl:SetTall(48)
-        lbl:SetFont("ST2.SlotReel")
-        lbl:SetTextColor(THEME.text)
-        lbl:SetContentAlignment(5)
-        lbl:SetText(randomSlotIcon())
         reelLabels[i][row] = lbl
       end
     end
@@ -2325,8 +2449,7 @@ local function openPointshop(models, activeModel, defaultPrice)
               stopTimers()
               return
             end
-            lbl:SetText(randomSlotIcon())
-            lbl:SetTextColor(THEME.text)
+            lbl:SetSlotSymbol(randomSlotSymbol(), false)
           end
         end)
       end
