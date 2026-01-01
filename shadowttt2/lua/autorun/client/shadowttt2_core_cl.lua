@@ -403,6 +403,58 @@ do -- Admin panel helpers
       btn:SetWide(230)
     end
 
+    local roundtimePanel = actionGrid:Add("DPanel")
+    roundtimePanel:SetSize(230, 120)
+    roundtimePanel.Paint = function(_, w, h)
+      draw.RoundedBox(12, 0, 0, w, h, Color(32, 32, 42, 230))
+    end
+
+    local roundtimeLabel = vgui.Create("DLabel", roundtimePanel)
+    roundtimeLabel:Dock(TOP)
+    roundtimeLabel:DockMargin(10, 8, 10, 4)
+    roundtimeLabel:SetTall(20)
+    roundtimeLabel:SetFont("ST2.Subtitle")
+    roundtimeLabel:SetTextColor(THEME.text)
+    roundtimeLabel:SetText("Rundenzeit (Minuten)")
+
+    local roundtimeWang = vgui.Create("DNumberWang", roundtimePanel)
+    roundtimeWang:Dock(TOP)
+    roundtimeWang:DockMargin(10, 0, 10, 8)
+    roundtimeWang:SetTall(30)
+    roundtimeWang:SetMin(1)
+    roundtimeWang:SetMax(300)
+    roundtimeWang:SetDecimals(0)
+    roundtimeWang:SetValue(10)
+    roundtimeWang:SetFont("ST2.Body")
+
+    local roundtimeStatus = vgui.Create("DLabel", roundtimePanel)
+    roundtimeStatus:Dock(TOP)
+    roundtimeStatus:DockMargin(10, 0, 10, 4)
+    roundtimeStatus:SetTall(18)
+    roundtimeStatus:SetFont("ST2.Body")
+    roundtimeStatus:SetTextColor(THEME.muted)
+    roundtimeStatus:SetText("")
+
+    local roundtimeButton = vgui.Create("DButton", roundtimePanel)
+    roundtimeButton:Dock(BOTTOM)
+    roundtimeButton:DockMargin(10, 0, 10, 10)
+    roundtimeButton:SetTall(34)
+    roundtimeButton:SetText("Speichern")
+    styleButton(roundtimeButton)
+    roundtimeButton.DoClick = function()
+      local minutes = math.floor(tonumber(roundtimeWang:GetValue()) or 0)
+      if minutes < 1 then return end
+      minutes = math.Clamp(minutes, 1, 300)
+
+      net.Start("ST2_ADMIN_ACTION")
+      net.WriteString("roundtime")
+      net.WriteUInt(minutes, 12)
+      net.SendToServer()
+
+      roundtimeStatus:SetText("Gesendet: " .. minutes .. " min")
+      roundtimeStatus:SetTextColor(THEME.accent_soft)
+    end
+
     local giveWeaponPanel = actionGrid:Add("DPanel")
     giveWeaponPanel:SetSize(230, 120)
     giveWeaponPanel.Paint = function(_, w, h)
