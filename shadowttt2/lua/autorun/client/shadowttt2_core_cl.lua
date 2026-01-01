@@ -503,7 +503,7 @@ do -- Admin panel helpers
     actionScroll:Dock(FILL)
     actionScroll:DockMargin(10, 0, 10, 10)
     local actionGrid = actionScroll:Add("DIconLayout")
-    actionGrid:Dock(TOP)
+    actionGrid:Dock(FILL)
     actionGrid:DockMargin(0, 4, 0, 4)
     actionGrid:SetSpaceX(10)
     actionGrid:SetSpaceY(10)
