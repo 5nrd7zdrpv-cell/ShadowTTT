@@ -245,6 +245,17 @@ do -- Admin panel helpers
     net.SendToServer()
   end
 
+  local function formatMapDisplayName(mapName)
+    if not isstring(mapName) then return "" end
+    local trimmed = string.Trim(mapName) or ""
+    if trimmed == "" then return "" end
+    if string.match(string.lower(trimmed), "%.bsp$") then
+      return trimmed
+    end
+
+    return trimmed .. ".bsp"
+  end
+
   local function sendMapChange(mapName)
     if not isstring(mapName) or mapName == "" then return end
     net.Start("ST2_ADMIN_MAP_CHANGE")
@@ -329,7 +340,8 @@ do -- Admin panel helpers
     ui.currentMap = current or ""
 
     if IsValid(ui.mapCurrentLabel) then
-      ui.mapCurrentLabel:SetText(current ~= "" and ("Aktuelle Map: " .. current) or "Aktuelle Map unbekannt")
+      local display = formatMapDisplayName(current)
+      ui.mapCurrentLabel:SetText(display ~= "" and ("Aktuelle Map: " .. display) or "Aktuelle Map unbekannt")
     end
 
     if not IsValid(ui.mapDropdown) then return end
@@ -337,7 +349,7 @@ do -- Admin panel helpers
     ui.mapDropdown.SelectedMap = nil
 
     for _, mapName in ipairs(entries) do
-      ui.mapDropdown:AddChoice(mapName, mapName)
+      ui.mapDropdown:AddChoice(formatMapDisplayName(mapName), mapName)
     end
 
     if ui.mapDropdown.SetValue then
@@ -1772,12 +1784,13 @@ local function ensureMapVoteFrame()
 end
 
 local function updateMapOptionPanel(ui, mapName, votes)
+  local displayName = formatMapDisplayName(mapName)
   local panel = ui.optionPanels[mapName]
   if not IsValid(panel) then
     panel = ui.list:Add("DButton")
     panel:SetTall(90)
     panel:SetText("")
-    panel:SetTooltip(mapName)
+    panel:SetTooltip(displayName)
     panel.ShadowMap = mapName
     panel.DoClick = function()
       if ui.locked then return end
@@ -1799,7 +1812,7 @@ local function updateMapOptionPanel(ui, mapName, votes)
     end
 
     draw.RoundedBox(12, 0, 0, w, h, base)
-    draw.SimpleText(mapName, "ST2.Subtitle", 12, 12, THEME.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+    draw.SimpleText(displayName, "ST2.Subtitle", 12, 12, THEME.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
 
     local voteText = string.format("%d Stimme%s", self.ShadowVotes or 0, (self.ShadowVotes or 0) == 1 and "" or "n")
     draw.SimpleText(voteText, "ST2.Body", 12, 44, THEME.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
@@ -1871,7 +1884,7 @@ local function applyMapVoteResult(winner, options)
   end
 
   if IsValid(ui.statusLabel) then
-    ui.statusLabel:SetText("Gewählte Map: " .. winner .. " (Wechsel in Kürze)")
+    ui.statusLabel:SetText("Gewählte Map: " .. formatMapDisplayName(winner) .. " (Wechsel in Kürze)")
   end
 
   timer.Simple(5, function()
