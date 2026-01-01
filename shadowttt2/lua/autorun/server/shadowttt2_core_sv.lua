@@ -249,6 +249,8 @@ util.AddNetworkString("ST2_ADMIN_ACTION")
 util.AddNetworkString("ST2_ADMIN_RECOIL")
 util.AddNetworkString("ST2_ADMIN_RECOIL_REQUEST")
 util.AddNetworkString("ST2_ADMIN_RECOIL_SET")
+util.AddNetworkString("ST2_ADMIN_WEAPON_REQUEST")
+util.AddNetworkString("ST2_ADMIN_WEAPON_LIST")
 util.AddNetworkString("ST2_PS_EQUIP")
 util.AddNetworkString("ST2_PS_MODELS_REQUEST")
 util.AddNetworkString("ST2_PS_MODELS")
@@ -530,6 +532,47 @@ local function sendRecoilMultiplier(ply)
   net.Send(ply)
 end
 
+local function collectWeaponList()
+  local seen = {}
+  local entries = {}
+  for _, wep in ipairs(weapons.GetList() or {}) do
+    local class = wep and (wep.ClassName or wep.Classname or wep.Class) or nil
+    if not isstring(class) or class == "" or seen[class] then continue end
+    seen[class] = true
+
+    local name = ""
+    if wep and isstring(wep.PrintName) then
+      name = wep.PrintName
+    end
+
+    table.insert(entries, {class = class, name = name})
+  end
+
+  table.sort(entries, function(a, b)
+    local aName = string.lower(a.name ~= "" and a.name or a.class)
+    local bName = string.lower(b.name ~= "" and b.name or b.class)
+    if aName == bName then
+      return string.lower(a.class) < string.lower(b.class)
+    end
+    return aName < bName
+  end)
+
+  return entries
+end
+
+local function sendWeaponList(ply)
+  if not IsValid(ply) then return end
+  local entries = collectWeaponList()
+
+  net.Start("ST2_ADMIN_WEAPON_LIST")
+  net.WriteUInt(#entries, 12)
+  for _, info in ipairs(entries) do
+    net.WriteString(info.class or "")
+    net.WriteString(info.name or "")
+  end
+  net.Send(ply)
+end
+
 concommand.Add("shadow_admin_open", function(ply)
   if not IsAdmin(ply) then return end
   net.Start("ST2_ADMIN_OPEN") net.Send(ply)
@@ -552,6 +595,11 @@ net.Receive("ST2_ADMIN_REQUEST", function(_, ply)
   if not IsAdmin(ply) then return end
   net.Start("ST2_ADMIN_OPEN") net.Send(ply)
   sendRecoilMultiplier(ply)
+end)
+
+net.Receive("ST2_ADMIN_WEAPON_REQUEST", function(_, ply)
+  if not IsAdmin(ply) then return end
+  sendWeaponList(ply)
 end)
 
 net.Receive("ST2_ADMIN_ACTION", function(_, ply)
