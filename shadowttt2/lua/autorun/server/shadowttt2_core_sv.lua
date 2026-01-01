@@ -659,6 +659,7 @@ util.AddNetworkString("ST2_ADMIN_ACTION")
 util.AddNetworkString("ST2_ADMIN_BANLIST_REQUEST")
 util.AddNetworkString("ST2_ADMIN_BANLIST")
 util.AddNetworkString("ST2_ADMIN_UNBAN")
+util.AddNetworkString("ST2_ADMIN_POINTS_GRANT")
 util.AddNetworkString("ST2_ADMIN_RECOIL")
 util.AddNetworkString("ST2_ADMIN_RECOIL_REQUEST")
 util.AddNetworkString("ST2_ADMIN_RECOIL_SET")
@@ -1361,9 +1362,8 @@ net.Receive("ST2_ADMIN_MAP_CHANGE", function(_, ply)
   end)
 end)
 
-net.Receive("ST2_ADMIN_PLAYERLIST", function(_, ply)
-  if not IsAdmin(ply) then return end
-
+local function sendAdminPlayerList(ply)
+  if not IsValid(ply) then return end
   local players = player.GetAll()
   net.Start("ST2_ADMIN_PLAYERLIST")
     net.WriteUInt(#players, 8)
@@ -1373,6 +1373,35 @@ net.Receive("ST2_ADMIN_PLAYERLIST", function(_, ply)
       net.WriteInt(tgt:GetNWInt("ST2_Points", getPoints(tgt)), 32)
     end
   net.Send(ply)
+end
+
+net.Receive("ST2_ADMIN_PLAYERLIST", function(_, ply)
+  if not IsAdmin(ply) then return end
+
+  sendAdminPlayerList(ply)
+end)
+
+net.Receive("ST2_ADMIN_POINTS_GRANT", function(_, ply)
+  if not IsAdmin(ply) then return end
+
+  local sid = net.ReadString()
+  local amount = math.floor(net.ReadInt(32) or 0)
+  if not isstring(sid) or sid == "" then return end
+  if amount <= 0 then return end
+
+  local tgt = player.GetBySteamID(sid)
+  if not IsValid(tgt) then return end
+
+  ensureStarterPoints(tgt)
+  addPoints(tgt, amount)
+  sendPointsBalance(tgt)
+
+  if IsValid(ply) then
+    ply:PrintMessage(HUD_PRINTTALK, string.format("[ShadowTTT2] %s +%d Punkte gegeben.", tgt:Nick(), amount))
+  end
+  tgt:ChatPrint(string.format("[ShadowTTT2] Du hast %d Punkte vom Admin erhalten.", amount))
+
+  sendAdminPlayerList(ply)
 end)
 
 net.Receive("ST2_PS_MODELS_REQUEST", function(_, ply)
