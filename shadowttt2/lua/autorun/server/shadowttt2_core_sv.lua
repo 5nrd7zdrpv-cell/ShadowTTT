@@ -37,6 +37,43 @@ local function getRecoilMultiplier()
   if not recoilMultiplierConVar then return RECOIL_MULTIPLIER_DEFAULT end
   return clampRecoilMultiplier(recoilMultiplierConVar:GetFloat())
 end
+local WALK_SPEED_DEFAULT = 160
+local RUN_SPEED_DEFAULT = 220
+local function clampWalkSpeed(value)
+  if not isnumber(value) then return WALK_SPEED_DEFAULT end
+  return math.Clamp(value, 50, 500)
+end
+local function clampRunSpeed(value)
+  if not isnumber(value) then return RUN_SPEED_DEFAULT end
+  return math.Clamp(value, 100, 750)
+end
+local walkSpeedConVar = CreateConVar("st2_walk_speed", tostring(WALK_SPEED_DEFAULT), {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "ShadowTTT2 walk speed (50-500).")
+local runSpeedConVar = CreateConVar("st2_run_speed", tostring(RUN_SPEED_DEFAULT), {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "ShadowTTT2 run/sprint speed (100-750).")
+local function getWalkSpeed()
+  if not walkSpeedConVar then return WALK_SPEED_DEFAULT end
+  return clampWalkSpeed(walkSpeedConVar:GetFloat())
+end
+local function getRunSpeed()
+  if not runSpeedConVar then return RUN_SPEED_DEFAULT end
+  return clampRunSpeed(runSpeedConVar:GetFloat())
+end
+
+local function applyMoveSpeedToPlayer(ply)
+  if not IsValid(ply) then return end
+  local walk = getWalkSpeed()
+  local run = getRunSpeed()
+  ply:SetWalkSpeed(walk)
+  ply:SetRunSpeed(run)
+  if ply.SetSlowWalkSpeed then
+    ply:SetSlowWalkSpeed(walk)
+  end
+end
+
+local function applyMoveSpeeds()
+  for _, p in ipairs(player.GetAll()) do
+    applyMoveSpeedToPlayer(p)
+  end
+end
 local MODEL_DATA_PATH = "shadowttt2/playermodels.json"
 local BAN_DATA_PATH = "shadowttt2/bans.json"
 local ANALYTICS_PATH = "shadowttt2/server_analytics.json"
@@ -432,6 +469,9 @@ util.AddNetworkString("ST2_ADMIN_UNBAN")
 util.AddNetworkString("ST2_ADMIN_RECOIL")
 util.AddNetworkString("ST2_ADMIN_RECOIL_REQUEST")
 util.AddNetworkString("ST2_ADMIN_RECOIL_SET")
+util.AddNetworkString("ST2_ADMIN_SPEED")
+util.AddNetworkString("ST2_ADMIN_SPEED_REQUEST")
+util.AddNetworkString("ST2_ADMIN_SPEED_SET")
 util.AddNetworkString("ST2_ADMIN_WEAPON_REQUEST")
 util.AddNetworkString("ST2_ADMIN_WEAPON_LIST")
 util.AddNetworkString("ST2_ADMIN_MAPS_REQUEST")
@@ -748,6 +788,7 @@ local function applyStoredModel(ply)
     if IsValid(ply) then
       ply:SetModel(mdl)
       trackModelUsage(mdl)
+      applyMoveSpeedToPlayer(ply)
     end
   end)
 end
@@ -756,6 +797,14 @@ local function sendRecoilMultiplier(ply)
   if not IsValid(ply) then return end
   net.Start("ST2_ADMIN_RECOIL")
   net.WriteFloat(getRecoilMultiplier())
+  net.Send(ply)
+end
+
+local function sendMovementSpeeds(ply)
+  if not IsValid(ply) then return end
+  net.Start("ST2_ADMIN_SPEED")
+  net.WriteFloat(getWalkSpeed())
+  net.WriteFloat(getRunSpeed())
   net.Send(ply)
 end
 
@@ -873,6 +922,7 @@ concommand.Add("shadow_admin_open", function(ply)
   if not IsAdmin(ply) then return end
   net.Start("ST2_ADMIN_OPEN") net.Send(ply)
   sendRecoilMultiplier(ply)
+  sendMovementSpeeds(ply)
 end)
 
 concommand.Add("shadowttt2_rebuild_models", function(ply)
@@ -891,6 +941,7 @@ net.Receive("ST2_ADMIN_REQUEST", function(_, ply)
   if not IsAdmin(ply) then return end
   net.Start("ST2_ADMIN_OPEN") net.Send(ply)
   sendRecoilMultiplier(ply)
+  sendMovementSpeeds(ply)
 end)
 
 net.Receive("ST2_ADMIN_WEAPON_REQUEST", function(_, ply)
@@ -993,6 +1044,32 @@ net.Receive("ST2_ADMIN_RECOIL_SET", function(_, ply)
   applyRecoilMultiplierToWeapons(requested)
 end)
 
+net.Receive("ST2_ADMIN_SPEED_REQUEST", function(_, ply)
+  if not IsAdmin(ply) then return end
+  sendMovementSpeeds(ply)
+end)
+
+net.Receive("ST2_ADMIN_SPEED_SET", function(_, ply)
+  if not IsAdmin(ply) then return end
+  local requestedWalk = clampWalkSpeed(net.ReadFloat())
+  local requestedRun = clampRunSpeed(net.ReadFloat())
+
+  if walkSpeedConVar then
+    walkSpeedConVar:SetFloat(requestedWalk)
+  else
+    RunConsoleCommand("st2_walk_speed", tostring(requestedWalk))
+  end
+
+  if runSpeedConVar then
+    runSpeedConVar:SetFloat(requestedRun)
+  else
+    RunConsoleCommand("st2_run_speed", tostring(requestedRun))
+  end
+
+  applyMoveSpeeds()
+  sendMovementSpeeds(ply)
+end)
+
 net.Receive("ST2_ADMIN_UNBAN", function(_, ply)
   if not IsAdmin(ply) then return end
   local sid = net.ReadString()
@@ -1057,14 +1134,21 @@ hook.Add("PlayerInitialSpawn", "ST2_PS_SEND_MODEL_SNAPSHOT", function(ply)
   timer.Simple(1, function()
     sendModelSnapshot(ply)
     applyStoredModel(ply)
+    applyMoveSpeedToPlayer(ply)
   end)
 end)
 
 hook.Add("PlayerSpawn", "ST2_PS_APPLY_SAVED_MODEL", applyStoredModel)
+hook.Add("PlayerSpawn", "ST2_APPLY_MOVE_SPEEDS", function(ply)
+  timer.Simple(0, function()
+    applyMoveSpeedToPlayer(ply)
+  end)
+end)
 
 -- Bootstrap caches on load so model data exists before the first request
 loadAnalytics()
 loadBanData()
 getModelData()
+applyMoveSpeeds()
 
 print("[ShadowTTT2] MODEL-ENUM SERVER ready")
