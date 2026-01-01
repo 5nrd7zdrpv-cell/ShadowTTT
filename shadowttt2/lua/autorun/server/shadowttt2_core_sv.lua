@@ -252,6 +252,9 @@ util.AddNetworkString("ST2_ADMIN_RECOIL_SET")
 util.AddNetworkString("ST2_PS_EQUIP")
 util.AddNetworkString("ST2_PS_MODELS_REQUEST")
 util.AddNetworkString("ST2_PS_MODELS")
+util.AddNetworkString("ST2_MAPVOTE_STATE")
+util.AddNetworkString("ST2_MAPVOTE_VOTE")
+util.AddNetworkString("ST2_MAPVOTE_RESULT")
 
 local function ShouldInstantHeadshotKill(target, attacker)
   if not IsValid(target) or not target:IsPlayer() or not target:Alive() then return false end
@@ -304,6 +307,208 @@ local function broadcastModelSnapshots()
     sendModelSnapshot(tgt)
   end
 end
+
+local MAP_VOTE_OPTION_COUNT = 6
+local MAP_VOTE_DURATION = 15
+local MAP_VOTE_TIMER = "ST2_MapVoteTimer"
+local mapVote = {
+  active = false,
+  endTime = 0,
+  options = {},
+  optionSet = {},
+  votes = {},
+  voterChoice = {}
+}
+ShadowTTT2.MapVote = mapVote
+
+local function resetMapVote()
+  mapVote.active = false
+  mapVote.endTime = 0
+  mapVote.options = {}
+  mapVote.optionSet = {}
+  mapVote.votes = {}
+  mapVote.voterChoice = {}
+end
+
+local function collectMaps()
+  local maps = {}
+  local function addMaps(pattern)
+    local found = file.Find(pattern, "GAME") or {}
+    for _, name in ipairs(found) do
+      local trimmed = string.StripExtension(name)
+      if trimmed and trimmed ~= "" then
+        maps[#maps + 1] = trimmed
+      end
+    end
+  end
+
+  addMaps("maps/ttt_*.bsp")
+  addMaps("maps/terrortown_*.bsp")
+
+  local unique = {}
+  local current = string.lower(game.GetMap() or "")
+  for _, mapName in ipairs(maps) do
+    local lowered = string.lower(mapName)
+    if lowered ~= current and not unique[lowered] then
+      unique[lowered] = mapName
+    end
+  end
+
+  local list = {}
+  for _, name in pairs(unique) do
+    list[#list + 1] = name
+  end
+
+  return list
+end
+
+local function shuffle(list)
+  for i = #list, 2, -1 do
+    local j = math.random(i)
+    list[i], list[j] = list[j], list[i]
+  end
+end
+
+local function pickMapOptions()
+  local pool = collectMaps()
+  if #pool == 0 then return {} end
+
+  shuffle(pool)
+  local options = {}
+  for i = 1, math.min(MAP_VOTE_OPTION_COUNT, #pool) do
+    options[i] = pool[i]
+  end
+
+  return options
+end
+
+local function sendMapVoteState(target)
+  if not mapVote.active then return end
+  net.Start("ST2_MAPVOTE_STATE")
+    net.WriteUInt(#mapVote.options, 6)
+    for _, mapName in ipairs(mapVote.options) do
+      net.WriteString(mapName)
+      net.WriteUInt(mapVote.votes[mapName] or 0, 12)
+    end
+    net.WriteFloat(mapVote.endTime)
+  net.Send(target or player.GetAll())
+end
+
+local function finishMapVote()
+  if not mapVote.active then return end
+  mapVote.active = false
+  timer.Remove(MAP_VOTE_TIMER)
+
+  local winner = mapVote.options[1]
+  local highest = -1
+  local ties = {}
+  for _, mapName in ipairs(mapVote.options) do
+    local votes = mapVote.votes[mapName] or 0
+    if votes > highest then
+      highest = votes
+      ties = {mapName}
+      winner = mapName
+    elseif votes == highest then
+      ties[#ties + 1] = mapName
+    end
+  end
+
+  if #ties > 1 then
+    winner = ties[math.random(#ties)]
+  end
+
+  net.Start("ST2_MAPVOTE_RESULT")
+    net.WriteString(winner or "")
+    net.WriteUInt(#mapVote.options, 6)
+    for _, mapName in ipairs(mapVote.options) do
+      net.WriteString(mapName)
+      net.WriteUInt(mapVote.votes[mapName] or 0, 12)
+    end
+  net.Broadcast()
+
+  PrintMessage(HUD_PRINTTALK, "[ShadowTTT2] Mapvote beendet. Gewonnen hat: " .. (winner or "Unbekannt"))
+
+  timer.Simple(5, function()
+    if winner and winner ~= "" then
+      RunConsoleCommand("changelevel", winner)
+    end
+  end)
+end
+
+local function startMapVote()
+  if mapVote.active then return end
+
+  local options = pickMapOptions()
+  if #options == 0 then return end
+
+  resetMapVote()
+  mapVote.active = true
+  mapVote.endTime = CurTime() + MAP_VOTE_DURATION
+  mapVote.options = options
+  for _, mapName in ipairs(options) do
+    mapVote.optionSet[mapName] = true
+    mapVote.votes[mapName] = 0
+  end
+
+  sendMapVoteState()
+  PrintMessage(HUD_PRINTTALK, "[ShadowTTT2] Mapvote gestartet! Stimme jetzt für die nächste Map ab.")
+
+  timer.Create(MAP_VOTE_TIMER, MAP_VOTE_DURATION, 1, finishMapVote)
+end
+
+local function maybeStartMapVote()
+  if mapVote.active then return end
+  local cvar = GetConVar("ttt_round_limit")
+  if not cvar or cvar:GetInt() <= 0 then return end
+
+  local roundsLeft = GetGlobalInt("ttt_rounds_left", cvar:GetInt())
+  if roundsLeft <= 0 then
+    startMapVote()
+  end
+end
+
+net.Receive("ST2_MAPVOTE_VOTE", function(_, ply)
+  if not mapVote.active or not IsValid(ply) then return end
+
+  local choice = net.ReadString()
+  if not mapVote.optionSet[choice] then return end
+
+  local sid = ply:SteamID()
+  local previous = sid and mapVote.voterChoice[sid]
+  if previous == choice then return end
+
+  if previous and mapVote.votes[previous] then
+    mapVote.votes[previous] = math.max(0, mapVote.votes[previous] - 1)
+  end
+
+  mapVote.voterChoice[sid] = choice
+  mapVote.votes[choice] = (mapVote.votes[choice] or 0) + 1
+
+  sendMapVoteState()
+end)
+
+hook.Add("PlayerInitialSpawn", "ST2_MapVoteSync", function(ply)
+  if mapVote.active then
+    sendMapVoteState(ply)
+  end
+end)
+
+hook.Add("PlayerDisconnected", "ST2_MapVoteRemoveVote", function(ply)
+  if not mapVote.active or not IsValid(ply) then return end
+  local sid = ply:SteamID()
+  local choice = sid and mapVote.voterChoice[sid]
+  if not choice or not mapVote.votes[choice] then return end
+
+  mapVote.voterChoice[sid] = nil
+  mapVote.votes[choice] = math.max(0, mapVote.votes[choice] - 1)
+  sendMapVoteState()
+end)
+
+hook.Add("TTTEndRound", "ST2_MapVoteTrigger", function()
+  timer.Simple(1, function()
+    maybeStartMapVote()
+  end)
+end)
 
 local function applyStoredModel(ply)
   if not IsValid(ply) then return end
