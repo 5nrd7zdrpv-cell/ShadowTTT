@@ -893,6 +893,11 @@ net.Receive("ST2_ADMIN_ACTION", function(_, ply)
     return
   end
 
+  if act == "roundrestart" then
+    RunConsoleCommand("ttt_roundrestart")
+    return
+  end
+
   if act == "kick" then
     local sid = net.ReadString()
     local reason = string.Trim(net.ReadString() or "")
@@ -930,7 +935,6 @@ net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   elseif act == "bring" then tgt:SetPos(ply:GetPos() + Vector(50,0,0))
   elseif act == "force_traitor" and tgt.SetRole then tgt:SetRole(ROLE_TRAITOR) SendFullStateUpdate()
   elseif act == "force_innocent" and tgt.SetRole then tgt:SetRole(ROLE_INNOCENT) SendFullStateUpdate()
-  elseif act == "roundrestart" then RunConsoleCommand("ttt_roundrestart")
   elseif act == "giveweapon" and isstring(class) and class ~= "" then
     tgt:Give(class)
   end
