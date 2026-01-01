@@ -27,6 +27,7 @@ local BLUEPRINTS = {
 }
 
 local SHOP_CONFIG_PATH = "shadowttt2/traitor_shop.json"
+local PROGRESS_PATH = "shadowttt2/traitor_progress.json"
 local ShopConfig = {
   enabled = {},
   prices = {},
@@ -39,9 +40,145 @@ local function isAdmin(ply)
   return IsValid(ply) and ShadowTTT2.Admins and ShadowTTT2.Admins[ply:SteamID()]
 end
 
+local function getBlueprint(id)
+  for _, bp in ipairs(BLUEPRINTS) do
+    if bp.id == id then return bp end
+  end
+end
+
 local function ensureDataFolder()
   if not file.Exists("shadowttt2", "DATA") then
     file.CreateDir("shadowttt2")
+  end
+end
+
+local function safeJsonDecode(raw)
+  if not raw or raw == "" then return end
+
+  local ok, decoded = pcall(util.JSONToTable, raw)
+  if not ok or not istable(decoded) then return end
+
+  return decoded
+end
+
+local function sanitizeOwned(owned)
+  local cleaned = {}
+  if not istable(owned) then return cleaned end
+
+  for id, state in pairs(owned) do
+    if isstring(id) and state then
+      cleaned[id] = true
+    end
+  end
+
+  return cleaned
+end
+
+local function sanitizeProject(project)
+  if not istable(project) or not isstring(project.id) then return end
+
+  local bp = getBlueprint(project.id)
+  if not bp then return end
+
+  local started = tonumber(project.started) or CurTime()
+  local readyAt = tonumber(project.readyAt) or (started + (bp.buildTime or 5))
+  if readyAt <= started then return end
+  local now = CurTime()
+  -- Drop obviously stale projects that have been left unclaimed for a long time.
+  if readyAt + 6 * 3600 < now then return end
+
+  return {
+    id = bp.id,
+    started = started,
+    readyAt = readyAt
+  }
+end
+
+local function getPlayerId(ply)
+  if not IsValid(ply) then return end
+  return ply:SteamID()
+end
+
+local function persistState()
+  ensureDataFolder()
+
+  local payload = {}
+  local seen = {}
+
+  for steamid in pairs(Owned) do
+    seen[steamid] = true
+  end
+
+  for steamid in pairs(Projects) do
+    seen[steamid] = true
+  end
+
+  for steamid in pairs(seen) do
+    local owned = sanitizeOwned(Owned[steamid])
+    local project = sanitizeProject(Projects[steamid])
+
+    Owned[steamid] = next(owned) and owned or nil
+    Projects[steamid] = project
+
+    if Owned[steamid] or Projects[steamid] then
+      payload[steamid] = {
+        owned = Owned[steamid] or {},
+        project = Projects[steamid]
+      }
+    end
+  end
+
+  local encoded = util.TableToJSON(payload, true)
+  if encoded then
+    file.Write(PROGRESS_PATH, encoded)
+  end
+end
+
+local function loadProgress()
+  ensureDataFolder()
+
+  if not file.Exists(PROGRESS_PATH, "DATA") then return end
+
+  local decoded = safeJsonDecode(file.Read(PROGRESS_PATH, "DATA"))
+  if not decoded then return end
+
+  for steamid, data in pairs(decoded) do
+    if not isstring(steamid) or not istable(data) then continue end
+
+    local owned = sanitizeOwned(data.owned)
+    local project = sanitizeProject(data.project)
+
+    if next(owned) then
+      Owned[steamid] = owned
+    end
+
+    if project then
+      Projects[steamid] = project
+    end
+  end
+end
+
+local function ensurePlayerState(ply)
+  local steamid = getPlayerId(ply)
+  if not steamid then return end
+
+  Owned[steamid] = Owned[steamid] or {}
+
+  local project = sanitizeProject(Projects[steamid])
+  if Projects[steamid] ~= project then
+    Projects[steamid] = project
+  end
+
+  return steamid
+end
+
+local function cleanupProject(steamid)
+  if not steamid then return end
+
+  local project = sanitizeProject(Projects[steamid])
+  if Projects[steamid] ~= project then
+    Projects[steamid] = project
+    persistState()
   end
 end
 
@@ -200,8 +337,15 @@ local function rebuildCatalogue()
 end
 
 local function resetPlayer(ply)
-  Owned[ply] = nil
-  Projects[ply] = nil
+  local steamid = ensurePlayerState(ply)
+  if not steamid then return end
+
+  if not next(Owned[steamid]) and not Projects[steamid] then
+    Owned[steamid] = nil
+    Projects[steamid] = nil
+  end
+
+  persistState()
 end
 
 local function canAccessShop(ply)
@@ -209,12 +353,14 @@ local function canAccessShop(ply)
 end
 
 local function sendSnapshot(ply)
-  if not IsValid(ply) then return end
+  local steamid = ensurePlayerState(ply)
+  if not steamid then return end
+  cleanupProject(steamid)
 
   net.Start("ST2_TS_SYNC")
     net.WriteTable({
-      owned = Owned[ply] or {},
-      project = Projects[ply],
+      owned = Owned[steamid] or {},
+      project = Projects[steamid],
       credits = ply:GetCredits(),
       catalogue = Catalogue,
       blueprints = BLUEPRINTS
@@ -223,8 +369,19 @@ local function sendSnapshot(ply)
 end
 
 hook.Add("TTTBeginRound","ST2_TS_ResetOwned", function()
-  Owned = {}
-  Projects = {}
+  local changed = false
+
+  for _, ply in ipairs(player.GetAll()) do
+    local steamid = ensurePlayerState(ply)
+    if steamid then
+      cleanupProject(steamid)
+      changed = true
+    end
+  end
+
+  if changed then
+    persistState()
+  end
 end)
 
 hook.Add("PlayerDisconnected", "ST2_TS_CleanupOwned", function(ply)
@@ -238,8 +395,11 @@ net.Receive("ST2_TS_SYNC_REQUEST", function(_, ply)
 end)
 
 local function markOwned(ply, id)
-  Owned[ply] = Owned[ply] or {}
-  Owned[ply][id] = true
+  local steamid = ensurePlayerState(ply)
+  if not steamid then return end
+
+  Owned[steamid][id] = true
+  persistState()
 end
 
 net.Receive("ST2_TS_BUY", function(_, ply)
@@ -259,8 +419,10 @@ net.Receive("ST2_TS_BUY", function(_, ply)
 
   if not item then return end
 
-  Owned[ply] = Owned[ply] or {}
-  if Owned[ply][id] then return end
+  local steamid = ensurePlayerState(ply)
+  if not steamid then return end
+
+  if Owned[steamid][id] then return end
   if ply:GetCredits() < item.price then return end
 
   ply:SetCredits(ply:GetCredits() - item.price)
@@ -269,14 +431,9 @@ net.Receive("ST2_TS_BUY", function(_, ply)
   end
 
   markOwned(ply, id)
+  persistState()
   sendSnapshot(ply)
 end)
-
-local function getBlueprint(id)
-  for _, bp in ipairs(BLUEPRINTS) do
-    if bp.id == id then return bp end
-  end
-end
 
 local function syncAdminConfig(ply)
   if not isAdmin(ply) then return end
@@ -317,24 +474,31 @@ net.Receive("ST2_TS_WORKSHOP", function(_, ply)
   local bp = getBlueprint(id)
 
   if action == "start" then
-    if not bp or Projects[ply] then return end
-    Owned[ply] = Owned[ply] or {}
-    if bp.requiresOwned and not Owned[ply][bp.requiresOwned] then return end
+    if not bp then return end
+    local steamid = ensurePlayerState(ply)
+    if not steamid then return end
+    if Projects[steamid] then return end
+    cleanupProject(steamid)
+    if bp.requiresOwned and not Owned[steamid][bp.requiresOwned] then return end
     if ply:GetCredits() < bp.price then return end
 
     ply:SetCredits(ply:GetCredits() - bp.price)
-    Projects[ply] = {
+    Projects[steamid] = {
       id = bp.id,
       started = CurTime(),
       readyAt = CurTime() + (bp.buildTime or 5)
     }
 
+    persistState()
     sendSnapshot(ply)
     return
   end
 
   if action == "claim" then
-    local project = Projects[ply]
+    local steamid = ensurePlayerState(ply)
+    if not steamid then return end
+
+    local project = Projects[steamid]
     if not project or not bp or project.id ~= bp.id then return end
     if project.readyAt and CurTime() < project.readyAt then return end
 
@@ -342,7 +506,8 @@ net.Receive("ST2_TS_WORKSHOP", function(_, ply)
       ply:Give(bp.rewardWeapon)
     end
 
-    Projects[ply] = nil
+    Projects[steamid] = nil
+    persistState()
     sendSnapshot(ply)
   end
 end)
@@ -428,6 +593,7 @@ end)
 
 hook.Add("Initialize", "ST2_TS_BOOTSTRAP", function()
   loadShopConfig()
+  loadProgress()
   rebuildCatalogue()
 end)
 
