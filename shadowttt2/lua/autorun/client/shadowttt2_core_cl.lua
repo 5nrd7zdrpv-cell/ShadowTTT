@@ -17,6 +17,7 @@ local THEME = {
 }
 local SLOT_MIN_BET = 5
 local SLOT_MAX_BET = 1000
+local MODEL_PRICE_DEFAULT = 100
 
 surface.CreateFont("ST2.Title", {font = "Roboto", size = 24, weight = 800})
 surface.CreateFont("ST2.Subtitle", {font = "Roboto", size = 18, weight = 600})
@@ -466,6 +467,14 @@ do -- Admin panel helpers
     net.SendToServer()
   end
 
+  local function sendPointshopPrice(modelPath, price, useDefault)
+    net.Start("ST2_PS_ADMIN_PRICE")
+    net.WriteString(modelPath or "")
+    net.WriteBool(useDefault or false)
+    net.WriteUInt(math.max(0, math.floor(price or 0)), 16)
+    net.SendToServer()
+  end
+
   local function populateShopList(list, entries, filter)
     if not IsValid(list) then return end
     list:Clear()
@@ -492,20 +501,23 @@ do -- Admin panel helpers
     end
   end
 
-  local function populateModelAdminList(list, entries, filter, onlyEnabled, counter)
+  local function populateModelAdminList(list, entries, filter, onlyEnabled, counter, defaultPrice)
     if not IsValid(list) then return end
     list:Clear()
     local q = string.Trim(string.lower(filter or ""))
     local visible = 0
+    local fallbackPrice = defaultPrice or MODEL_PRICE_DEFAULT
     for _, row in ipairs(entries or {}) do
       if onlyEnabled and not row.enabled then continue end
       if q ~= "" and not string.find(string.lower(row.model or ""), q, 1, true) then continue end
 
+      local price = math.max(0, math.floor(tonumber(row.price) or fallbackPrice))
       local status = row.enabled and "Aktiv" or "Versteckt"
-      local line = list:AddLine(row.model or "", status)
+      local line = list:AddLine(row.model or "", string.format("%d Punkte", price), status)
       if IsValid(line) then
         setLineTextColor(line, row.enabled and THEME.text or THEME.muted)
         line.ShadowRowData = row
+        line.ShadowRowData.price = price
         line.Paint = function(self, w, h)
           local base = row.enabled and Color(255, 255, 255, 6) or Color(255, 120, 140, 20)
           if self:IsLineSelected() then
@@ -552,18 +564,21 @@ do -- Admin panel helpers
     local ui = ShadowTTT2.AdminUI
     if not ui then return end
 
+    local defaultPrice = net.ReadUInt(16)
     local count = net.ReadUInt(16)
     local entries = {}
     for _ = 1, count do
       entries[#entries + 1] = {
         model = net.ReadString(),
-        enabled = net.ReadBool()
+        enabled = net.ReadBool(),
+        price = net.ReadUInt(16)
       }
     end
 
+    ui.modelDefaultPrice = defaultPrice > 0 and defaultPrice or MODEL_PRICE_DEFAULT
     ui.modelEntries = entries
     if IsValid(ui.modelList) then
-      populateModelAdminList(ui.modelList, entries, IsValid(ui.modelSearch) and ui.modelSearch:GetText() or "", IsValid(ui.modelEnabledOnly) and ui.modelEnabledOnly:GetChecked(), ui.modelCounter)
+      populateModelAdminList(ui.modelList, entries, IsValid(ui.modelSearch) and ui.modelSearch:GetText() or "", IsValid(ui.modelEnabledOnly) and ui.modelEnabledOnly:GetChecked(), ui.modelCounter, ui.modelDefaultPrice)
       if ui.modelList.GetLineCount and ui.modelList:GetLineCount() > 0 then
         ui.modelList:SelectFirstItem()
       end
@@ -1479,11 +1494,12 @@ do -- Admin panel helpers
     modelList:Dock(FILL)
     modelList:DockMargin(10, 0, 10, 10)
     modelList:AddColumn("Modell")
+    modelList:AddColumn("Preis")
     modelList:AddColumn("Status")
     styleListView(modelList)
     modelEnabledOnly.OnChange = function()
       local ui = ShadowTTT2.AdminUI
-      populateModelAdminList(modelList, ui and ui.modelEntries or {}, IsValid(modelSearch) and modelSearch:GetText() or "", modelEnabledOnly:GetChecked(), modelCounter)
+      populateModelAdminList(modelList, ui and ui.modelEntries or {}, IsValid(modelSearch) and modelSearch:GetText() or "", modelEnabledOnly:GetChecked(), modelCounter, ui and ui.modelDefaultPrice)
     end
 
     local modelRight = vgui.Create("DPanel", modelPanel)
@@ -1518,6 +1534,44 @@ do -- Admin panel helpers
     modelToggle:SetFont("ST2.Body")
     modelToggle:SetTextColor(THEME.text)
 
+    local modelPriceLabel = vgui.Create("DLabel", modelRight)
+    modelPriceLabel:Dock(TOP)
+    modelPriceLabel:DockMargin(10, 0, 10, 2)
+    modelPriceLabel:SetTall(20)
+    modelPriceLabel:SetFont("ST2.Body")
+    modelPriceLabel:SetTextColor(THEME.muted)
+    modelPriceLabel:SetText("Preis: Standard")
+
+    local modelPriceRow = vgui.Create("DPanel", modelRight)
+    modelPriceRow:Dock(TOP)
+    modelPriceRow:DockMargin(10, 0, 10, 8)
+    modelPriceRow:SetTall(38)
+    modelPriceRow.Paint = function(_, w, h)
+      draw.RoundedBox(8, 0, 0, w, h, Color(28, 28, 36, 220))
+    end
+
+    local modelPriceEntry = vgui.Create("DNumberWang", modelPriceRow)
+    modelPriceEntry:Dock(LEFT)
+    modelPriceEntry:DockMargin(8, 6, 6, 6)
+    modelPriceEntry:SetWide(120)
+    modelPriceEntry:SetMin(0)
+    modelPriceEntry:SetMax(65535)
+    modelPriceEntry:SetDecimals(0)
+    modelPriceEntry:SetFont("ST2.Body")
+
+    local modelPriceSave = vgui.Create("DButton", modelPriceRow)
+    modelPriceSave:Dock(LEFT)
+    modelPriceSave:DockMargin(0, 6, 6, 6)
+    modelPriceSave:SetWide(160)
+    modelPriceSave:SetText("Preis speichern")
+    styleButton(modelPriceSave)
+
+    local modelPriceReset = vgui.Create("DButton", modelPriceRow)
+    modelPriceReset:Dock(FILL)
+    modelPriceReset:DockMargin(0, 6, 8, 6)
+    modelPriceReset:SetText("Standardpreis nutzen")
+    styleButton(modelPriceReset)
+
     local modelPreview = vgui.Create("DModelPanel", modelRight)
     modelPreview:Dock(FILL)
     modelPreview:DockMargin(10, 0, 10, 10)
@@ -1532,12 +1586,18 @@ do -- Admin panel helpers
     end
 
     local selectedModel
+    local function getDefaultModelPrice()
+      local ui = ShadowTTT2.AdminUI
+      return (ui and ui.modelDefaultPrice) or MODEL_PRICE_DEFAULT
+    end
     local suppressToggle
     local function updateModelSelection(line)
       selectedModel = line and line.ShadowRowData
       if not selectedModel then
         modelTitle:SetText("Kein Modell ausgewählt")
         modelInfo:SetText("Aktiviere oder verstecke Modelle für den F3-Shop. Doppelklick in der Liste toggelt den Status.")
+        modelPriceLabel:SetText(string.format("Preis: %d Punkte (Standard)", getDefaultModelPrice()))
+        if IsValid(modelPriceEntry) then modelPriceEntry:SetValue(getDefaultModelPrice()) end
         suppressToggle = true
         if IsValid(modelToggle) and modelToggle.SetChecked then modelToggle:SetChecked(false) end
         suppressToggle = false
@@ -1547,10 +1607,23 @@ do -- Admin panel helpers
 
       modelTitle:SetText(selectedModel.model or "Unbekanntes Modell")
       modelInfo:SetText(selectedModel.enabled and "Status: Aktiv im F3-Shop" or "Status: Versteckt im F3-Shop")
+      local price = math.max(0, math.floor(selectedModel.price or getDefaultModelPrice()))
+      modelPriceLabel:SetText(string.format("Preis: %d Punkte", price))
+      if IsValid(modelPriceEntry) then modelPriceEntry:SetValue(price) end
       suppressToggle = true
       if IsValid(modelToggle) and modelToggle.SetChecked then modelToggle:SetChecked(selectedModel.enabled) end
       suppressToggle = false
       if IsValid(modelPreview) then modelPreview:SetModel(selectedModel.model or "") end
+    end
+
+    modelPriceSave.DoClick = function()
+      if not selectedModel then return end
+      sendPointshopPrice(selectedModel.model, modelPriceEntry:GetValue(), false)
+    end
+
+    modelPriceReset.DoClick = function()
+      if not selectedModel then return end
+      sendPointshopPrice(selectedModel.model, getDefaultModelPrice(), true)
     end
 
     modelList.OnRowSelected = function(_, _, line)
@@ -1563,7 +1636,7 @@ do -- Admin panel helpers
 
     modelSearch.OnValueChange = function(_, value)
       local ui = ShadowTTT2.AdminUI
-      populateModelAdminList(modelList, ui and ui.modelEntries or {}, value, IsValid(modelEnabledOnly) and modelEnabledOnly:GetChecked(), modelCounter)
+      populateModelAdminList(modelList, ui and ui.modelEntries or {}, value, IsValid(modelEnabledOnly) and modelEnabledOnly:GetChecked(), modelCounter, ui and ui.modelDefaultPrice)
     end
 
     modelToggle.OnChange = function(_, state)
@@ -1689,6 +1762,9 @@ do -- Admin panel helpers
       modelCounter = modelCounter,
       modelToggle = modelToggle,
       modelPreview = modelPreview,
+      modelPriceEntry = modelPriceEntry,
+      modelPriceLabel = modelPriceLabel,
+      modelDefaultPrice = MODEL_PRICE_DEFAULT,
     }
 
     populateWeaponDropdown(giveWeaponDropdown, {}, "", nil)
@@ -1713,7 +1789,8 @@ local pointshopState = {
   requestPending = false,
   openPending = false,
   points = 0,
-  spinPending = false
+  spinPending = false,
+  defaultPrice = MODEL_PRICE_DEFAULT
 }
 
 local function formatSelectedLabel(mdl, active)
@@ -1742,6 +1819,7 @@ local function updatePointsDisplay(ui, balance)
   if IsValid(ui.slotBalance) then
     ui.slotBalance:SetText(string.format("Aktueller Kontostand: %d", ui.points))
   end
+  updateEquipButton(ui)
 end
 
 local function showSlotResult(ui, symbols, text, payout)
@@ -1779,23 +1857,27 @@ local function refreshPointshopList(ui, filter)
 
   local q = string.Trim(string.lower(filter or ""))
   local visible = 0
-  for _, m in ipairs(ui.models or {}) do
-    if q == "" or string.find(string.lower(m), q, 1, true) then
-      local line = ui.list:AddLine(m)
+  local fallbackPrice = ui.defaultPrice or pointshopState.defaultPrice or MODEL_PRICE_DEFAULT
+  for _, entry in ipairs(ui.models or {}) do
+    local mdl = entry.model or entry
+    local price = math.max(0, math.floor(entry.price or fallbackPrice))
+    if q == "" or string.find(string.lower(mdl), q, 1, true) then
+      local line = ui.list:AddLine(mdl, string.format("%d Punkte", price))
       if IsValid(line) then
         if line.SetTextColor then
-          line:SetTextColor(m == ui.activeModel and THEME.accent_soft or THEME.text)
+          line:SetTextColor(mdl == ui.activeModel and THEME.accent_soft or THEME.text)
         else
           for _, col in ipairs(line.Columns or {}) do
             if IsValid(col) and col.SetTextColor then
-              col:SetTextColor(m == ui.activeModel and THEME.accent_soft or THEME.text)
+              col:SetTextColor(mdl == ui.activeModel and THEME.accent_soft or THEME.text)
             end
           end
         end
-        line.ShadowModelPath = m
+        line.ShadowModelPath = mdl
+        line.ShadowModelPrice = price
         line.Paint = function(self, w, h)
           local bg = self:IsLineSelected() and THEME.accent or Color(255, 255, 255, 6)
-          if m == ui.activeModel then
+          if mdl == ui.activeModel then
             bg = self:IsLineSelected() and THEME.accent or Color(120, 200, 255, 24)
           end
           draw.RoundedBox(0, 0, 0, w, h, bg)
@@ -1810,13 +1892,40 @@ local function refreshPointshopList(ui, filter)
   end
 end
 
-local function selectModel(ui, mdl)
+local function updateEquipButton(ui)
+  if not ui or not IsValid(ui.equipButton) then return end
+  local mdl = ui.currentModel
+  local price = ui.currentPrice or ui.defaultPrice or pointshopState.defaultPrice or MODEL_PRICE_DEFAULT
+  local alreadyActive = mdl ~= nil and mdl == ui.activeModel
+  local affordable = (pointshopState.points or 0) >= price
+
+  if not mdl or mdl == "" then
+    ui.equipButton:SetEnabled(false)
+    ui.equipButton:SetText("Modell auswählen")
+    return
+  end
+
+  ui.equipButton:SetEnabled(alreadyActive or affordable)
+  if alreadyActive then
+    ui.equipButton:SetText("Bereits aktiv")
+  elseif price <= 0 then
+    ui.equipButton:SetText("Kostenlos auswählen")
+  else
+    ui.equipButton:SetText(string.format("Auswählen (%d Punkte)", price))
+  end
+end
+
+local function selectModel(ui, mdl, price)
   if not mdl or mdl == "" then return end
   if IsValid(ui.preview) then
     ui.preview:SetModel(mdl)
   end
   if IsValid(ui.selectedLabel) then
     ui.selectedLabel:SetText(formatSelectedLabel(mdl, ui.activeModel))
+  end
+  if IsValid(ui.priceLabel) then
+    local cost = math.max(0, math.floor(price or ui.defaultPrice or pointshopState.defaultPrice or MODEL_PRICE_DEFAULT))
+    ui.priceLabel:SetText(string.format("Preis: %d Punkte", cost))
   end
   if IsValid(ui.equipButton) then
     ui.equipButton.DoClick = function()
@@ -1826,11 +1935,14 @@ local function selectModel(ui, mdl)
     end
   end
   ui.currentModel = mdl
+  ui.currentPrice = math.max(0, math.floor(price or ui.defaultPrice or pointshopState.defaultPrice or MODEL_PRICE_DEFAULT))
+  updateEquipButton(ui)
 end
 
-local function applyPointshopData(ui, models, activeModel)
+local function applyPointshopData(ui, models, activeModel, defaultPrice)
   ui.models = models or {}
   ui.activeModel = activeModel or ""
+  ui.defaultPrice = defaultPrice or ui.defaultPrice or pointshopState.defaultPrice or MODEL_PRICE_DEFAULT
   local searchText = IsValid(ui.search) and ui.search:GetText() or ""
   refreshPointshopList(ui, searchText)
 
@@ -1853,10 +1965,11 @@ local function applyPointshopData(ui, models, activeModel)
   updatePointsDisplay(ui, pointshopState.points)
 end
 
-local function openPointshop(models, activeModel)
+local function openPointshop(models, activeModel, defaultPrice)
   if IsValid(activePointshopFrame) then
     if activePointshopFrame.ShadowPointshopUI then
-      applyPointshopData(activePointshopFrame.ShadowPointshopUI, models, activeModel)
+      activePointshopFrame.ShadowPointshopUI.defaultPrice = defaultPrice or activePointshopFrame.ShadowPointshopUI.defaultPrice or pointshopState.defaultPrice or MODEL_PRICE_DEFAULT
+      applyPointshopData(activePointshopFrame.ShadowPointshopUI, models, activeModel, activePointshopFrame.ShadowPointshopUI.defaultPrice)
     end
     activePointshopFrame:MakePopup()
     activePointshopFrame:RequestFocus()
@@ -1910,6 +2023,7 @@ local function openPointshop(models, activeModel)
   listv:Dock(FILL)
   listv:DockMargin(10, 0, 10, 10)
   listv:AddColumn("Model")
+  listv:AddColumn("Preis")
   if listv.SetDataHeight then listv:SetDataHeight(26) end
   if listv.SetHeaderHeight then listv:SetHeaderHeight(30) end
   listv.Paint = function(_, w, h)
@@ -2063,6 +2177,14 @@ local function openPointshop(models, activeModel)
   equip:SetText("Modell auswählen")
   styleButton(equip)
 
+  local priceLabel = vgui.Create("DLabel", right)
+  priceLabel:Dock(BOTTOM)
+  priceLabel:DockMargin(10, 0, 10, 6)
+  priceLabel:SetTall(18)
+  priceLabel:SetFont("ST2.Body")
+  priceLabel:SetTextColor(THEME.muted)
+  priceLabel:SetText("Preis: lädt...")
+
   local selected = vgui.Create("DLabel", right)
   selected:Dock(BOTTOM)
   selected:DockMargin(10, 0, 10, 6)
@@ -2077,6 +2199,7 @@ local function openPointshop(models, activeModel)
     counter = counter,
     preview = preview,
     equipButton = equip,
+    priceLabel = priceLabel,
     selectedLabel = selected,
     pointsLabel = pointsLabel,
     slotResult = slotResult,
@@ -2086,7 +2209,9 @@ local function openPointshop(models, activeModel)
     betEntry = betEntry,
     models = models or {},
     activeModel = activeModel or "",
-    currentModel = nil
+    currentModel = nil,
+    currentPrice = nil,
+    defaultPrice = defaultPrice or pointshopState.defaultPrice or MODEL_PRICE_DEFAULT
   }
 
   spinButton.DoClick = function()
@@ -2106,7 +2231,7 @@ local function openPointshop(models, activeModel)
   end
 
   listv.OnRowSelected = function(_, _, line)
-    selectModel(ui, line:GetColumnText(1))
+    selectModel(ui, line:GetColumnText(1), line.ShadowModelPrice or ui.defaultPrice)
   end
 
   search.OnValueChange = function(_, value)
@@ -2114,7 +2239,7 @@ local function openPointshop(models, activeModel)
   end
 
   activePointshopFrame.ShadowPointshopUI = ui
-  applyPointshopData(ui, models, activeModel)
+  applyPointshopData(ui, models, activeModel, ui.defaultPrice)
   requestPointsBalance()
 end
 
@@ -2130,19 +2255,24 @@ hook.Add("PlayerButtonDown", "ST2_F3_POINTSHOP_FINAL", function(_, key)
 end)
 
 net.Receive("ST2_PS_MODELS", function()
+  local defaultPrice = net.ReadUInt(16)
   local count = net.ReadUInt(16)
   local models = {}
   for i = 1, count do
-    models[i] = net.ReadString()
+    models[i] = {
+      model = net.ReadString(),
+      price = net.ReadUInt(16)
+    }
   end
 
   local activeModel = net.ReadString() or ""
+  pointshopState.defaultPrice = defaultPrice > 0 and defaultPrice or MODEL_PRICE_DEFAULT
   pointshopState.requestPending = false
   pointshopState.models = models
   pointshopState.activeModel = activeModel
 
   if IsValid(activePointshopFrame) and activePointshopFrame.ShadowPointshopUI then
-    applyPointshopData(activePointshopFrame.ShadowPointshopUI, models, activeModel)
+    applyPointshopData(activePointshopFrame.ShadowPointshopUI, models, activeModel, pointshopState.defaultPrice)
   end
 
   if pointshopState.openPending then
@@ -2151,7 +2281,7 @@ net.Receive("ST2_PS_MODELS", function()
       chat.AddText(Color(200, 60, 60), "ShadowTTT2 Pointshop: keine serverseitig gespeicherten Modelle gefunden.")
       return
     end
-    openPointshop(models, activeModel)
+    openPointshop(models, activeModel, pointshopState.defaultPrice)
   end
 end)
 
