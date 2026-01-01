@@ -6,6 +6,7 @@ ShadowTTT2.Admins = ShadowTTT2.Admins or { ["STEAM_0:1:15220591"] = true }
 ShadowTTT2.WorkshopPushed = ShadowTTT2.WorkshopPushed or {}
 ShadowTTT2.ModelData = ShadowTTT2.ModelData or {}
 ShadowTTT2.Bans = ShadowTTT2.Bans or {}
+ShadowTTT2.Analytics = ShadowTTT2.Analytics or {}
 ShadowTTT2.ServerCoreLoaded = true
 
 local function IsAdmin(ply) return IsValid(ply) and ShadowTTT2.Admins[ply:SteamID()] end
@@ -21,6 +22,8 @@ local function getRecoilMultiplier()
 end
 local MODEL_DATA_PATH = "shadowttt2/playermodels.json"
 local BAN_DATA_PATH = "shadowttt2/bans.json"
+local ANALYTICS_PATH = "shadowttt2/server_analytics.json"
+local ANALYTICS_VERSION = 1
 local MODEL_CACHE_VERSION = 2
 -- These models spam AE_CL_PLAYSOUND errors because their animations reference empty sound names.
 local BLACKLISTED_MODELS = {
@@ -45,6 +48,54 @@ local function ensureDataDir()
   if not file.Exists("shadowttt2", "DATA") then
     file.CreateDir("shadowttt2")
   end
+end
+
+local function loadAnalytics()
+  ensureDataDir()
+  local raw = file.Exists(ANALYTICS_PATH, "DATA") and file.Read(ANALYTICS_PATH, "DATA")
+  local decoded = raw and util.JSONToTable(raw)
+
+  if istable(decoded) then
+    ShadowTTT2.Analytics = {
+      version = decoded.version or 0,
+      modelUsage = decoded.modelUsage or {},
+      mapVotes = decoded.mapVotes or {}
+    }
+  end
+
+  ShadowTTT2.Analytics = ShadowTTT2.Analytics or {}
+  ShadowTTT2.Analytics.version = ANALYTICS_VERSION
+  ShadowTTT2.Analytics.modelUsage = ShadowTTT2.Analytics.modelUsage or {}
+  ShadowTTT2.Analytics.mapVotes = ShadowTTT2.Analytics.mapVotes or {}
+end
+
+local analyticsSavePending
+local function saveAnalytics()
+  ensureDataDir()
+  file.Write(ANALYTICS_PATH, util.TableToJSON({
+    version = ShadowTTT2.Analytics.version or ANALYTICS_VERSION,
+    modelUsage = ShadowTTT2.Analytics.modelUsage or {},
+    mapVotes = ShadowTTT2.Analytics.mapVotes or {}
+  }, true))
+  analyticsSavePending = nil
+end
+
+local function queueAnalyticsSave()
+  if analyticsSavePending then return end
+  analyticsSavePending = true
+  timer.Create("ST2_SaveAnalytics", 1, 1, saveAnalytics)
+end
+
+local function trackModelUsage(mdl)
+  if not isstring(mdl) or mdl == "" then return end
+  ShadowTTT2.Analytics.modelUsage[mdl] = (ShadowTTT2.Analytics.modelUsage[mdl] or 0) + 1
+  queueAnalyticsSave()
+end
+
+local function trackMapVote(mapName)
+  if not isstring(mapName) or mapName == "" then return end
+  ShadowTTT2.Analytics.mapVotes[mapName] = (ShadowTTT2.Analytics.mapVotes[mapName] or 0) + 1
+  queueAnalyticsSave()
 end
 
 local function loadModelData()
@@ -590,6 +641,7 @@ net.Receive("ST2_MAPVOTE_VOTE", function(_, ply)
   local choice = net.ReadString()
   if not mapVote.optionSet[choice] then return end
 
+  trackMapVote(choice)
   local sid = ply:SteamID()
   local previous = sid and mapVote.voterChoice[sid]
   if previous == choice then return end
@@ -648,6 +700,7 @@ local function applyStoredModel(ply)
   timer.Simple(0, function()
     if IsValid(ply) then
       ply:SetModel(mdl)
+      trackModelUsage(mdl)
     end
   end)
 end
@@ -903,6 +956,7 @@ net.Receive("ST2_PS_EQUIP", function(_, ply)
   local sid = ply:SteamID()
   data.selected = data.selected or {}
   data.selected[sid] = mdl
+  trackModelUsage(mdl)
   saveModelData()
   sendModelSnapshot(ply)
 end)
@@ -917,6 +971,7 @@ end)
 hook.Add("PlayerSpawn", "ST2_PS_APPLY_SAVED_MODEL", applyStoredModel)
 
 -- Bootstrap caches on load so model data exists before the first request
+loadAnalytics()
 loadBanData()
 getModelData()
 
