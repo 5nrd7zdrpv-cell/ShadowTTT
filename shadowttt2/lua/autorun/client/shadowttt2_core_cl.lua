@@ -96,6 +96,13 @@ local function getSlotMaterial(id)
   return mat
 end
 
+local function warmSlotSvgCache()
+  for _, def in ipairs(SLOT_SVG_ICONS) do
+    def.mat = def.mat or getSlotMaterial(def.id)
+  end
+end
+warmSlotSvgCache()
+
 local function resolveSlotSymbol(sym)
   if istable(sym) then
     if sym.id and SLOT_ICON_LOOKUP[sym.id] then
@@ -149,7 +156,7 @@ end
 local function setSlotPanelSymbol(panel, sym, highlight)
   if not IsValid(panel) then return end
   local def = resolveSlotSymbol(sym)
-  local mat = def and def.id and getSlotMaterial(def.id)
+  local mat = def and (def.mat or (def.id and getSlotMaterial(def.id)))
   panel.ShadowSlotIcon = {
     id = def and def.id or nil,
     mat = mat or nil,
@@ -170,6 +177,108 @@ local function createSlotIconCell(parent)
   end
   cell:SetSlotSymbol(randomSlotSymbol(), false)
   return cell
+end
+
+local function createSlotReel(parent, idx)
+  local reel = {
+    panel = parent,
+    cells = {},
+    topMargin = 8,
+    spacing = 8,
+    cellHeight = 48,
+    cellWidth = 0,
+    step = 56,
+    interval = 0.1 + 0.02 * (idx or 1),
+    timerName = nil
+  }
+
+  reel.cellWidth = math.max(1, parent:GetWide() - 16)
+  reel.step = reel.cellHeight + reel.spacing
+
+  local function createCell(y)
+    local cell = createSlotIconCell(parent)
+    cell:SetSize(reel.cellWidth, reel.cellHeight)
+    cell:SetPos(8, y)
+    return cell
+  end
+
+  for i = 1, 3 do
+    local y = reel.topMargin + reel.step * (i - 1)
+    local cell = createCell(y)
+    reel.cells[i] = cell
+  end
+
+  function reel:stop()
+    if self.timerName then
+      timer.Remove(self.timerName)
+      self.timerName = nil
+    end
+  end
+
+  function reel:trim()
+    for i = #self.cells, 1, -1 do
+      local cell = self.cells[i]
+      if not IsValid(cell) or cell:GetY() > (self.topMargin + self.step * 2 + 6) then
+        if IsValid(cell) then cell:Remove() end
+        table.remove(self.cells, i)
+      end
+    end
+    while #self.cells > 3 do
+      local cell = table.remove(self.cells)
+      if IsValid(cell) then cell:Remove() end
+    end
+  end
+
+  function reel:advance(symbol)
+    if not IsValid(self.panel) then return end
+    local cell = createCell(self.topMargin - self.step)
+    cell:SetSlotSymbol(symbol or randomSlotSymbol(), false)
+    table.insert(self.cells, 1, cell)
+
+    for idx2, pnl in ipairs(self.cells) do
+      if IsValid(pnl) then
+        pnl:MoveTo(8, self.topMargin + self.step * (idx2 - 1), self.interval * 0.9, 0, 0.2)
+      end
+    end
+
+    timer.Simple(self.interval, function()
+      if not IsValid(self.panel) then return end
+      reel:trim()
+    end)
+  end
+
+  function reel:ensureCells()
+    for i = 1, 3 do
+      if not IsValid(self.cells[i]) then
+        local cell = createCell(self.topMargin + self.step * (i - 1))
+        self.cells[i] = cell
+      end
+    end
+    table.sort(self.cells, function(a, b)
+      if not IsValid(a) or not IsValid(b) then return false end
+      return a:GetY() < b:GetY()
+    end)
+  end
+
+  function reel:setSymbols(topSym, midSym, botSym, highlight)
+    self:stop()
+    self:ensureCells()
+    local icons = {
+      topSym or randomSlotSymbol(),
+      midSym or randomSlotSymbol(),
+      botSym or randomSlotSymbol()
+    }
+
+    for idx2, pnl in ipairs(self.cells) do
+      if not IsValid(pnl) then continue end
+      pnl:SetPos(8, self.topMargin - self.step)
+      pnl:SetSlotSymbol(icons[idx2], highlight and idx2 == 2)
+      pnl:MoveTo(8, self.topMargin + self.step * (idx2 - 1), 0.15, 0, 0.3)
+    end
+    self:trim()
+  end
+
+  return reel
 end
 
 local function styleButton(btn)
@@ -1981,17 +2090,15 @@ local function showSlotResult(ui, symbols, text, payout)
 
   if istable(ui.slotReels) then
     for i = 1, 3 do
-      local col = ui.slotReels[i]
-      if not istable(col) then continue end
+      local reel = ui.slotReels[i]
+      if not reel then continue end
       local sym = istable(symbols) and symbols[i] or nil
       local midIcon = resolveSlotSymbol(sym)
       local topIcon = randomSlotSymbol()
       local bottomIcon = randomSlotSymbol()
 
-      for idx, icon in ipairs({topIcon, midIcon, bottomIcon}) do
-        local lbl = col[idx]
-        if not IsValid(lbl) then continue end
-        lbl:SetSlotSymbol(icon, idx == 2 and win)
+      if reel.setSymbols then
+        reel:setSymbols(topIcon, midIcon, bottomIcon, win)
       end
     end
   end
@@ -2377,13 +2484,7 @@ local function openPointshop(models, activeModel, defaultPrice)
         surface.DrawRect(6, h / 2 - 26, w - 12, 52)
       end
 
-      reelLabels[i] = {}
-      for row = 1, 3 do
-        local lbl = createSlotIconCell(slotBox)
-        lbl:Dock(TOP)
-        lbl:DockMargin(8, row == 1 and 10 or 4, 8, row == 3 and 10 or 4)
-        reelLabels[i][row] = lbl
-      end
+      reelLabels[i] = createSlotReel(slotBox, i)
     end
 
     local reelHint = vgui.Create("DLabel", panel)
@@ -2442,25 +2543,36 @@ local function openPointshop(models, activeModel, defaultPrice)
           timer.Remove(name)
         end
         timers = {}
+        for _, reel in ipairs(reelLabels) do
+          if reel and reel.stop then
+            reel:stop()
+          end
+        end
 
         if isfunction(onStop) then
           onStop()
         end
       end
 
-      for colIndex, columns in ipairs(reelLabels) do
+      for colIndex, reel in ipairs(reelLabels) do
         local name = string.format("st2_slot_spin_%d_%f", colIndex, CurTime())
         table.insert(timers, name)
-        local interval = 0.05 + 0.02 * colIndex
-        timer.Create(name, interval, 0, function()
-          for _, lbl in ipairs(columns) do
-            if not IsValid(lbl) then
-              stopTimers()
-              return
-            end
-            lbl:SetSlotSymbol(randomSlotSymbol(), false)
+        if reel and reel.stop then reel:stop() end
+        if reel then reel.interval = 0.08 + 0.02 * colIndex end
+        timer.Create(name, reel and reel.interval or 0.1, 0, function()
+          if not reel or not reel.advance then
+            stopTimers()
+            return
           end
+          if not IsValid(reel.panel) then
+            stopTimers()
+            return
+          end
+          reel:advance(randomSlotSymbol())
         end)
+        if reel then
+          reel.timerName = name
+        end
       end
 
       local endTimer = string.format("st2_slot_spin_end_%f", CurTime())
