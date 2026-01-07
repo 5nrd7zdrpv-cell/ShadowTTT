@@ -1111,6 +1111,7 @@ local ROUND_WAIT = _G.ROUND_WAIT or _G.ROUND_WAITING or 1
 local ROUND_PREP = _G.ROUND_PREP or 2
 local ROUND_ACTIVE = _G.ROUND_ACTIVE or 3
 local ROUND_POST = _G.ROUND_POST or 4
+local includeBotsForMinPlayers = CreateConVar("st2_min_players_include_bots", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "ShadowTTT2: count bots toward minimum players (0/1).")
 local roundMonitor = {
   state = nil,
   lastChange = CurTime(),
@@ -1138,17 +1139,35 @@ local function markRoundState(state)
   end
 end
 
-local function hasEnoughPlayers()
-  local minPlayers = GetConVar("ttt_minimum_players")
-  local required = math.max(1, minPlayers and minPlayers:GetInt() or 2)
-  local humans = 0
+local function getMinimumPlayers()
+  local minPlayers = GetConVar("ttt_minimum_players") or GetConVar("ttt_min_players")
+  return math.max(1, minPlayers and minPlayers:GetInt() or 2)
+end
+
+local function countEligiblePlayers()
+  local includeBots = includeBotsForMinPlayers and includeBotsForMinPlayers:GetBool()
+  local count = 0
   for _, ply in ipairs(player.GetAll()) do
-    if IsValid(ply) and ply:IsPlayer() and not ply:IsBot() then
-      humans = humans + 1
+    if IsValid(ply) and ply:IsPlayer() then
+      if includeBots or not ply:IsBot() then
+        count = count + 1
+      end
     end
   end
-  return humans >= required
+  return count
 end
+
+local function hasEnoughPlayers()
+  local required = getMinimumPlayers()
+  return countEligiblePlayers() >= required
+end
+
+hook.Add("TTTCheckForStart", "ST2_EnsureMinPlayers", function()
+  local required = getMinimumPlayers()
+  if countEligiblePlayers() >= required then
+    return true
+  end
+end)
 
 local function prepTimeout()
   local prep = GetConVar("ttt_preptime_seconds")
