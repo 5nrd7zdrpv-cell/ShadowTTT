@@ -24,6 +24,7 @@ local Owned = {}
 local Projects = {}
 local Catalogue = {}
 local CatalogueLookup = {}
+local resyncAllTraitors
 
 local BLUEPRINTS = {
   {id = "workshop_overclock", name = "Overclock Mod", desc = "Veredle deine Remote C4 zu einer stärkeren Ladung.", price = 2, buildTime = 8, rewardWeapon = "weapon_ttt_c4", requiresOwned = "weapon_ttt_c4"},
@@ -214,6 +215,12 @@ local function resetPlayer(ply)
   Projects[ply] = nil
 end
 
+local function resetAllPlayers()
+  for _, ply in ipairs(player.GetAll()) do
+    resetPlayer(ply)
+  end
+end
+
 local function canAccessShop(ply)
   return traitorShopEnabled() and IsValid(ply) and ply:IsActiveTraitor()
 end
@@ -236,6 +243,14 @@ end
 hook.Add("PlayerDisconnected", "ST2_TS_CleanupOwned", function(ply)
   if not IsValid(ply) then return end
   resetPlayer(ply)
+end)
+
+hook.Add("TTTPrepareRound", "ST2_TS_ResetRoundState", function()
+  resetAllPlayers()
+end)
+
+hook.Add("TTTBeginRound", "ST2_TS_ResyncTraitors", function()
+  resyncAllTraitors()
 end)
 
 net.Receive("ST2_TS_SYNC_REQUEST", function(_, ply)
@@ -300,7 +315,7 @@ local function syncAdminConfig(ply)
   net.Send(ply)
 end
 
-local function resyncAllTraitors()
+resyncAllTraitors = function()
   for _, ply in ipairs(player.GetAll()) do
     if canAccessShop(ply) then
       sendSnapshot(ply)
