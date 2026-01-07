@@ -72,6 +72,25 @@ local function applyMoveSpeedToPlayer(ply)
   end
 end
 
+local function forceWaitingSpectator(ply)
+  if not IsValid(ply) then return end
+  if not GetRoundState or not ROUND_WAIT then return end
+  if GetRoundState() ~= ROUND_WAIT then return end
+
+  timer.Simple(0, function()
+    if not IsValid(ply) then return end
+    if ply:Alive() then
+      ply:KillSilent()
+    end
+    if ply.SetTeam and TEAM_SPEC then
+      ply:SetTeam(TEAM_SPEC)
+    end
+    if ply.Spectate then
+      ply:Spectate(OBS_MODE_ROAMING)
+    end
+  end)
+end
+
 local function applyMoveSpeeds()
   for _, p in ipairs(player.GetAll()) do
     applyMoveSpeedToPlayer(p)
@@ -1402,6 +1421,7 @@ hook.Add("PlayerSpawn", "ST2_APPLY_MOVE_SPEEDS", function(ply)
     applyMoveSpeedToPlayer(ply)
   end)
 end)
+hook.Add("PlayerSpawn", "ST2_FORCE_WAITING_SPECTATOR", forceWaitingSpectator)
 hook.Add("PlayerSpawn", "ST2_POINTS_SYNC_ON_SPAWN", function(ply)
   timer.Simple(0, function()
     ensureStarterPoints(ply)
