@@ -94,7 +94,8 @@ local SLOT_SYMBOLS = {
   {id = "diamond", icon = "💎", weight = 10, triple = 8, pair = 3},
   {id = "bell", icon = "🔔", weight = 14, triple = 6, pair = 2},
   {id = "star", icon = "⭐", weight = 18, triple = 5, pair = 2},
-  {id = "cherry", icon = "🍒", weight = 22, triple = 4, pair = 2}
+  {id = "cherry", icon = "🍒", weight = 22, triple = 4, pair = 2},
+  {id = "lemon", icon = "🍋", weight = 20, triple = 3, pair = 2}
 }
 local SLOT_SVG_FILES = {
   "materials/shadowttt2/slots/cherry.svg",
@@ -274,7 +275,8 @@ local function spinSlots(ply, bet)
 
   ShadowTTT2.Points.cooldowns = ShadowTTT2.Points.cooldowns or {}
   local now = CurTime()
-  local nextAllowed = ShadowTTT2.Points.cooldowns[ply] or 0
+  local sid = ply:SteamID()
+  local nextAllowed = (sid and ShadowTTT2.Points.cooldowns[sid]) or 0
   if now < nextAllowed then
     return false, "Bitte warte einen Moment vor dem nächsten Spin.", nil, getPoints(ply)
   end
@@ -292,7 +294,9 @@ local function spinSlots(ply, bet)
   local payout = resolveSlotPayout(symbols, bet)
   setPoints(ply, balance - bet + payout)
 
-  ShadowTTT2.Points.cooldowns[ply] = now + SLOT_COOLDOWN
+  if sid then
+    ShadowTTT2.Points.cooldowns[sid] = now + SLOT_COOLDOWN
+  end
   return true, payout > 0 and string.format("Gewonnen: +%d Punkte!", payout) or "Leider verloren – versuch es nochmal!", symbols, getPoints(ply), payout
 end
 

@@ -135,6 +135,7 @@ end
 surface.CreateFont("ST2.Title", {font = "Roboto", size = 24, weight = 800})
 surface.CreateFont("ST2.Subtitle", {font = "Roboto", size = 18, weight = 600})
 surface.CreateFont("ST2.Body", {font = "Roboto", size = 16, weight = 500})
+surface.CreateFont("ST2.Small", {font = "Roboto", size = 14, weight = 500})
 surface.CreateFont("ST2.Button", {font = "Roboto", size = 17, weight = 700})
 surface.CreateFont("ST2.Mono", {font = "Consolas", size = 15, weight = 500})
 surface.CreateFont("ST2.SlotReel", {font = "Roboto", size = 44, weight = 800})
