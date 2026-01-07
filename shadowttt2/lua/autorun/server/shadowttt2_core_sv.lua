@@ -417,6 +417,34 @@ local function getModelPrice(mdl)
   return normalizeModelPrice(stored)
 end
 
+local function getSelectedModelForPlayer(ply, data)
+  if not IsValid(ply) or not data or not data.selected then return nil end
+  local sid = ply:SteamID()
+  if sid and data.selected[sid] then
+    return data.selected[sid]
+  end
+
+  local sid64 = ply:SteamID64()
+  local legacy = sid64 and data.selected[sid64]
+  if legacy then
+    data.selected[sid] = legacy
+    data.selected[sid64] = nil
+    saveModelData()
+    return legacy
+  end
+
+  return nil
+end
+
+local function applyPlayerModel(ply, mdl)
+  if not IsValid(ply) or not isstring(mdl) or mdl == "" then return end
+  if not isModelAllowed(mdl) then return end
+  ply:SetModel(mdl)
+  if ply.SetupHands then
+    ply:SetupHands()
+  end
+end
+
 local function sanitizeBanTable(raw)
   if not istable(raw) then return {} end
 
@@ -807,10 +835,12 @@ local function sendModelSnapshot(ply)
     end
   end
 
-  local sid = ply:SteamID()
-  local selected = sid and data.selected and data.selected[sid]
+  local selected = getSelectedModelForPlayer(ply, data)
   if selected and not enabledSet[selected] then
-    data.selected[sid] = nil
+    local sid = ply:SteamID()
+    if sid and data.selected then
+      data.selected[sid] = nil
+    end
     saveModelData()
     selected = ""
   end
@@ -1199,15 +1229,14 @@ end)
 local function applyStoredModel(ply)
   if not IsValid(ply) then return end
   local data = getModelData()
-  local mdl = data.selected and data.selected[ply:SteamID()]
+  local mdl = getSelectedModelForPlayer(ply, data)
   if not mdl or not data.modelSet or not data.modelSet[mdl] or (data.enabledSet and not data.enabledSet[mdl]) then return end
 
   timer.Simple(0, function()
-    if IsValid(ply) then
-      ply:SetModel(mdl)
-      trackModelUsage(mdl)
-      applyMoveSpeedToPlayer(ply)
-    end
+    if not IsValid(ply) or not ply:Alive() then return end
+    applyPlayerModel(ply, mdl)
+    trackModelUsage(mdl)
+    applyMoveSpeedToPlayer(ply)
   end)
 end
 
@@ -1626,7 +1655,7 @@ net.Receive("ST2_PS_EQUIP", function(_, ply)
     end
   end
 
-  ply:SetModel(mdl)
+  applyPlayerModel(ply, mdl)
   data.selected = data.selected or {}
   data.selected[sid] = mdl
   trackModelUsage(mdl)
