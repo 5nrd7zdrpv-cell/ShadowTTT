@@ -14,6 +14,8 @@ ShadowTTT2.Bans = ShadowTTT2.Bans or {}
 ShadowTTT2.Analytics = ShadowTTT2.Analytics or {}
 ShadowTTT2.Points = ShadowTTT2.Points or {balances = {}}
 ShadowTTT2.ServerCoreLoaded = true
+local broadcastModelSnapshots
+local checkBanStatus
 
 local function IsAdmin(ply)
   if not IsValid(ply) then return false end
@@ -848,7 +850,7 @@ local function sendModelSnapshot(ply)
   net.Send(ply)
 end
 
-local function broadcastModelSnapshots()
+broadcastModelSnapshots = function()
   for _, tgt in ipairs(player.GetAll()) do
     sendModelSnapshot(tgt)
   end
@@ -1014,7 +1016,7 @@ local function broadcastBanList()
   end
 end
 
-local function checkBanStatus(steamId, playerName)
+checkBanStatus = function(steamId, playerName)
   if not isstring(steamId) or steamId == "" then return true end
   local ban = ShadowTTT2.Bans and ShadowTTT2.Bans[steamId]
   if not ban then return true end
