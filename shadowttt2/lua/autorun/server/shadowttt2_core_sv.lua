@@ -1111,6 +1111,53 @@ hook.Add("TTTPrepareRound", "ST2_MapVoteResetOnPrepare", function()
   cancelMapVote()
 end)
 
+local autoRoundStartCooldown = 5
+local nextAutoRoundStart = 0
+
+local function getMinimumRoundPlayers()
+  local minPlayers = 0
+  local tttMin = GetConVar("ttt_minimum_players")
+  if tttMin then
+    minPlayers = math.max(minPlayers, tttMin:GetInt())
+  end
+  local ttt2Min = GetConVar("ttt2_minimum_players")
+  if ttt2Min then
+    minPlayers = math.max(minPlayers, ttt2Min:GetInt())
+  end
+  if minPlayers <= 0 then
+    minPlayers = 2
+  end
+  return minPlayers
+end
+
+local function getCurrentRoundState()
+  if isfunction(GetRoundState) then
+    return GetRoundState()
+  end
+  if GAMEMODE and GAMEMODE.RoundState then
+    return GAMEMODE.RoundState
+  end
+  return nil
+end
+
+local function maybeAutoStartRound()
+  if mapVote.active then return end
+  if CurTime() < nextAutoRoundStart then return end
+
+  local state = getCurrentRoundState()
+  if state ~= nil and _G.ROUND_WAIT and state ~= ROUND_WAIT then return end
+
+  local minPlayers = getMinimumRoundPlayers()
+  if #player.GetAll() < minPlayers then return end
+
+  nextAutoRoundStart = CurTime() + autoRoundStartCooldown
+  RunConsoleCommand("ttt_roundrestart")
+end
+
+hook.Add("PlayerInitialSpawn", "ST2_AutoStartRoundOnJoin", function()
+  timer.Simple(1, maybeAutoStartRound)
+end)
+
 
 local function applyStoredModel(ply)
   if not IsValid(ply) then return end
