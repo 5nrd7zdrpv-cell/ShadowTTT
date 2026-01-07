@@ -153,15 +153,13 @@ local function loadAnalytics()
   if istable(decoded) then
     ShadowTTT2.Analytics = {
       version = decoded.version or 0,
-      modelUsage = decoded.modelUsage or {},
-      mapVotes = decoded.mapVotes or {}
+      modelUsage = decoded.modelUsage or {}
     }
   end
 
   ShadowTTT2.Analytics = ShadowTTT2.Analytics or {}
   ShadowTTT2.Analytics.version = ANALYTICS_VERSION
   ShadowTTT2.Analytics.modelUsage = ShadowTTT2.Analytics.modelUsage or {}
-  ShadowTTT2.Analytics.mapVotes = ShadowTTT2.Analytics.mapVotes or {}
 end
 
 local function loadPoints()
@@ -305,8 +303,7 @@ local function saveAnalytics()
   ensureDataDir()
   file.Write(ANALYTICS_PATH, util.TableToJSON({
     version = ShadowTTT2.Analytics.version or ANALYTICS_VERSION,
-    modelUsage = ShadowTTT2.Analytics.modelUsage or {},
-    mapVotes = ShadowTTT2.Analytics.mapVotes or {}
+    modelUsage = ShadowTTT2.Analytics.modelUsage or {}
   }, true))
   analyticsSavePending = nil
 end
@@ -320,12 +317,6 @@ end
 local function trackModelUsage(mdl)
   if not isstring(mdl) or mdl == "" then return end
   ShadowTTT2.Analytics.modelUsage[mdl] = (ShadowTTT2.Analytics.modelUsage[mdl] or 0) + 1
-  queueAnalyticsSave()
-end
-
-local function trackMapVote(mapName)
-  if not isstring(mapName) or mapName == "" then return end
-  ShadowTTT2.Analytics.mapVotes[mapName] = (ShadowTTT2.Analytics.mapVotes[mapName] or 0) + 1
   queueAnalyticsSave()
 end
 
@@ -768,9 +759,6 @@ util.AddNetworkString("ST2_POINTS_REQUEST")
 util.AddNetworkString("ST2_POINTS_BALANCE")
 util.AddNetworkString("ST2_POINTS_SPIN")
 util.AddNetworkString("ST2_POINTS_SPIN_RESULT")
-util.AddNetworkString("ST2_MAPVOTE_STATE")
-util.AddNetworkString("ST2_MAPVOTE_VOTE")
-util.AddNetworkString("ST2_MAPVOTE_RESULT")
 
 local function ShouldInstantHeadshotKill(target, attacker)
   if not IsValid(target) or not target:IsPlayer() or not target:Alive() then return false end
@@ -866,38 +854,7 @@ local function broadcastModelSnapshots()
   end
 end
 
-local MAP_VOTE_OPTION_COUNT = 6
-local MAP_VOTE_DURATION = 15
-local MAP_VOTE_TIMER = "ST2_MapVoteTimer"
 local MAP_SEARCH_PATHS = {"GAME", "MOD"}
-local mapVote = {
-  active = false,
-  endTime = 0,
-  options = {},
-  optionSet = {},
-  votes = {},
-  voterChoice = {}
-}
-ShadowTTT2.MapVote = mapVote
-
-local function resetMapVote()
-  mapVote.active = false
-  mapVote.endTime = 0
-  mapVote.options = {}
-  mapVote.optionSet = {}
-  mapVote.votes = {}
-  mapVote.voterChoice = {}
-end
-
-local function cancelMapVote()
-  timer.Remove(MAP_VOTE_TIMER)
-  resetMapVote()
-
-  net.Start("ST2_MAPVOTE_STATE")
-    net.WriteUInt(0, 6)
-    net.WriteFloat(CurTime())
-  net.Broadcast()
-end
 
 local function collectMaps()
   local maps = {}
@@ -946,138 +903,6 @@ local function sendAdminMapList(ply)
   net.Send(ply)
 end
 
-local function shuffle(list)
-  for i = #list, 2, -1 do
-    local j = math.random(i)
-    list[i], list[j] = list[j], list[i]
-  end
-end
-
-local function pickMapOptions()
-  local pool = collectMaps()
-  if #pool == 0 then return {} end
-
-  shuffle(pool)
-  local options = {}
-  for i = 1, math.min(MAP_VOTE_OPTION_COUNT, #pool) do
-    options[i] = pool[i]
-  end
-
-  return options
-end
-
-local function sendMapVoteState(target)
-  if not mapVote.active then return end
-  net.Start("ST2_MAPVOTE_STATE")
-    net.WriteUInt(#mapVote.options, 6)
-    for _, mapName in ipairs(mapVote.options) do
-      net.WriteString(mapName)
-      net.WriteUInt(mapVote.votes[mapName] or 0, 12)
-    end
-    net.WriteFloat(mapVote.endTime)
-  net.Send(target or player.GetAll())
-end
-
-local function finishMapVote()
-  if not mapVote.active then return end
-  mapVote.active = false
-  timer.Remove(MAP_VOTE_TIMER)
-
-  local winner = mapVote.options[1]
-  local highest = -1
-  local ties = {}
-  for _, mapName in ipairs(mapVote.options) do
-    local votes = mapVote.votes[mapName] or 0
-    if votes > highest then
-      highest = votes
-      ties = {mapName}
-      winner = mapName
-    elseif votes == highest then
-      ties[#ties + 1] = mapName
-    end
-  end
-
-  if #ties > 1 then
-    winner = ties[math.random(#ties)]
-  end
-
-  net.Start("ST2_MAPVOTE_RESULT")
-    net.WriteString(winner or "")
-    net.WriteUInt(#mapVote.options, 6)
-    for _, mapName in ipairs(mapVote.options) do
-      net.WriteString(mapName)
-      net.WriteUInt(mapVote.votes[mapName] or 0, 12)
-    end
-  net.Broadcast()
-
-  PrintMessage(HUD_PRINTTALK, "[ShadowTTT2] Mapvote beendet. Gewonnen hat: " .. (winner or "Unbekannt"))
-
-  timer.Simple(5, function()
-    if winner and winner ~= "" then
-      RunConsoleCommand("changelevel", winner)
-    end
-  end)
-end
-
-local function startMapVote()
-  if mapVote.active then return end
-
-  local options = pickMapOptions()
-  if #options == 0 then return end
-
-  resetMapVote()
-  mapVote.active = true
-  mapVote.endTime = CurTime() + MAP_VOTE_DURATION
-  mapVote.options = options
-  for _, mapName in ipairs(options) do
-    mapVote.optionSet[mapName] = true
-    mapVote.votes[mapName] = 0
-  end
-
-  sendMapVoteState()
-  PrintMessage(HUD_PRINTTALK, "[ShadowTTT2] Mapvote gestartet! Stimme jetzt für die nächste Map ab.")
-
-  timer.Create(MAP_VOTE_TIMER, MAP_VOTE_DURATION, 1, finishMapVote)
-end
-
-local function maybeStartMapVote()
-  if mapVote.active then return end
-  local cvar = GetConVar("ttt_round_limit")
-  if not cvar or cvar:GetInt() <= 0 then return end
-
-  local roundsLeft = GetGlobalInt("ttt_rounds_left", cvar:GetInt())
-  if roundsLeft <= 0 then
-    startMapVote()
-  end
-end
-
-net.Receive("ST2_MAPVOTE_VOTE", function(_, ply)
-  if not mapVote.active or not IsValid(ply) then return end
-
-  local choice = net.ReadString()
-  if not mapVote.optionSet[choice] then return end
-
-  trackMapVote(choice)
-  local sid = ply:SteamID()
-  local previous = sid and mapVote.voterChoice[sid]
-  if previous == choice then return end
-
-  if previous and mapVote.votes[previous] then
-    mapVote.votes[previous] = math.max(0, mapVote.votes[previous] - 1)
-  end
-
-  mapVote.voterChoice[sid] = choice
-  mapVote.votes[choice] = (mapVote.votes[choice] or 0) + 1
-
-  sendMapVoteState()
-end)
-
-hook.Add("PlayerInitialSpawn", "ST2_MapVoteSync", function(ply)
-  if mapVote.active then
-    sendMapVoteState(ply)
-  end
-end)
-
 hook.Add("PlayerInitialSpawn", "ST2_BanEnforceOnJoin", function(ply)
   if not IsValid(ply) then return end
   local allowed, msg = checkBanStatus(ply:SteamID(), ply:Nick())
@@ -1089,75 +914,6 @@ hook.Add("PlayerInitialSpawn", "ST2_BanEnforceOnJoin", function(ply)
     end)
   end
 end)
-
-hook.Add("PlayerDisconnected", "ST2_MapVoteRemoveVote", function(ply)
-  if not mapVote.active or not IsValid(ply) then return end
-  local sid = ply:SteamID()
-  local choice = sid and mapVote.voterChoice[sid]
-  if not choice or not mapVote.votes[choice] then return end
-
-  mapVote.voterChoice[sid] = nil
-  mapVote.votes[choice] = math.max(0, mapVote.votes[choice] - 1)
-  sendMapVoteState()
-end)
-
-hook.Add("TTTEndRound", "ST2_MapVoteTrigger", function()
-  timer.Simple(1, function()
-    maybeStartMapVote()
-  end)
-end)
-
-hook.Add("TTTPrepareRound", "ST2_MapVoteResetOnPrepare", function()
-  cancelMapVote()
-end)
-
-local autoRoundStartCooldown = 5
-local nextAutoRoundStart = 0
-
-local function getMinimumRoundPlayers()
-  local minPlayers = 0
-  local tttMin = GetConVar("ttt_minimum_players")
-  if tttMin then
-    minPlayers = math.max(minPlayers, tttMin:GetInt())
-  end
-  local ttt2Min = GetConVar("ttt2_minimum_players")
-  if ttt2Min then
-    minPlayers = math.max(minPlayers, ttt2Min:GetInt())
-  end
-  if minPlayers <= 0 then
-    minPlayers = 2
-  end
-  return minPlayers
-end
-
-local function getCurrentRoundState()
-  if isfunction(GetRoundState) then
-    return GetRoundState()
-  end
-  if GAMEMODE and GAMEMODE.RoundState then
-    return GAMEMODE.RoundState
-  end
-  return nil
-end
-
-local function maybeAutoStartRound()
-  if mapVote.active then return end
-  if CurTime() < nextAutoRoundStart then return end
-
-  local state = getCurrentRoundState()
-  if state ~= nil and _G.ROUND_WAIT and state ~= ROUND_WAIT then return end
-
-  local minPlayers = getMinimumRoundPlayers()
-  if #player.GetAll() < minPlayers then return end
-
-  nextAutoRoundStart = CurTime() + autoRoundStartCooldown
-  RunConsoleCommand("ttt_roundrestart")
-end
-
-hook.Add("PlayerInitialSpawn", "ST2_AutoStartRoundOnJoin", function()
-  timer.Simple(1, maybeAutoStartRound)
-end)
-
 
 local function applyStoredModel(ply)
   if not IsValid(ply) then return end
@@ -1186,23 +942,6 @@ local function sendMovementSpeeds(ply)
   net.WriteFloat(getWalkSpeed())
   net.WriteFloat(getRunSpeed())
   net.Send(ply)
-end
-
-local function endCurrentRound()
-  local winConst = _G.WIN_TIMELIMIT or _G.WIN_NONE or _G.WIN_INNOCENT or _G.WIN_TRAITOR or 0
-
-  if isfunction(EndRound) then
-    EndRound(winConst)
-    return true
-  end
-
-  if GAMEMODE and isfunction(GAMEMODE.EndRound) then
-    GAMEMODE:EndRound(winConst)
-    return true
-  end
-
-  RunConsoleCommand("ttt_roundrestart")
-  return false
 end
 
 local function collectWeaponList()
@@ -1377,29 +1116,6 @@ end)
 net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   if not IsAdmin(ply) then return end
   local act = net.ReadString()
-  if act == "endround" then
-    cancelMapVote()
-    endCurrentRound()
-    return
-  end
-
-  if act == "roundtime" then
-    local minutes = net.ReadUInt(12) or 0
-    minutes = math.Clamp(minutes, 1, 300)
-    if minutes > 0 then
-      RunConsoleCommand("ttt_roundtime_minutes", tostring(minutes))
-      if IsValid(ply) then
-        ply:PrintMessage(HUD_PRINTTALK, "[ShadowTTT2] Rundenzeit auf " .. minutes .. " Minuten gesetzt.")
-      end
-    end
-    return
-  end
-
-  if act == "roundrestart" then
-    RunConsoleCommand("ttt_roundrestart")
-    return
-  end
-
   if act == "kick" then
     local sid = net.ReadString()
     local reason = string.Trim(net.ReadString() or "")
@@ -1510,7 +1226,6 @@ net.Receive("ST2_ADMIN_MAP_CHANGE", function(_, ply)
   end
   if not exists then return end
 
-  cancelMapVote()
   PrintMessage(HUD_PRINTTALK, string.format("[ShadowTTT2] %s wechselt die Map zu %s", IsValid(ply) and ply:Nick() or "Konsole", mapName))
   timer.Simple(2, function()
     RunConsoleCommand("changelevel", mapName)
