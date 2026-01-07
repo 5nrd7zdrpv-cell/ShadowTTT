@@ -233,11 +233,6 @@ local function sendSnapshot(ply)
   net.Send(ply)
 end
 
-hook.Add("TTTBeginRound","ST2_TS_ResetOwned", function()
-  Owned = {}
-  Projects = {}
-end)
-
 hook.Add("PlayerDisconnected", "ST2_TS_CleanupOwned", function(ply)
   if not IsValid(ply) then return end
   resetPlayer(ply)
