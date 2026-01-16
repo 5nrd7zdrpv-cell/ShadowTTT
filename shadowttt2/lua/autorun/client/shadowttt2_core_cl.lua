@@ -2592,6 +2592,18 @@ local function openPointshop(models, activeModel, defaultPrice)
   local slotsPanel, slotUi = buildSlotsTab()
   sheets:AddSheet("Casino", slotsPanel, "icon16/coins.png")
 
+  local traitorPanel
+  local traitorRefresh
+  if ShadowTTT2 and ShadowTTT2.TraitorShop and ShadowTTT2.TraitorShop.BuildPanel then
+    traitorPanel, traitorRefresh = ShadowTTT2.TraitorShop.BuildPanel(sheets)
+    if IsValid(traitorPanel) then
+      sheets:AddSheet("Traitor Shop", traitorPanel, "icon16/plugin.png")
+      if ShadowTTT2.TraitorShop.RegisterRefresh and isfunction(traitorRefresh) then
+        ShadowTTT2.TraitorShop.RegisterRefresh(traitorRefresh)
+      end
+    end
+  end
+
   local ui = {}
   for k, v in pairs(modelUi) do ui[k] = v end
   for k, v in pairs(slotUi) do ui[k] = v end
@@ -2603,6 +2615,7 @@ local function openPointshop(models, activeModel, defaultPrice)
   ui.slotReels = slotUi.slotReels
   ui.stopSlotSpin = slotUi.stopSlotSpin
   ui.slotSpinActive = slotUi.slotSpinActive
+  ui.traitorShopRefresh = traitorRefresh
 
   if IsValid(ui.spinButton) then
     ui.spinButton.DoClick = function()
@@ -2647,6 +2660,11 @@ local function openPointshop(models, activeModel, defaultPrice)
   activePointshopFrame.ShadowPointshopUI = ui
   applyPointshopData(ui, models, activeModel, ui.defaultPrice)
   requestPointsBalance()
+  if ShadowTTT2 and ShadowTTT2.TraitorShop and ShadowTTT2.TraitorShop.RequestSnapshot and ShadowTTT2.TraitorShop.CanAccess then
+    if ShadowTTT2.TraitorShop.CanAccess() then
+      ShadowTTT2.TraitorShop.RequestSnapshot()
+    end
+  end
 end
 
 local function isActiveTraitor(ply)
