@@ -3,7 +3,7 @@ print("[ShadowTTT2] Traitor Shop // Nova Forge server init")
 
 ShadowTTT2 = ShadowTTT2 or {}
 
-local shopEnabled = CreateConVar("shadowttt2_traitorshop_enabled", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Enable ShadowTTT2 custom traitor shop")
+local shopEnabled = CreateConVar("shadowttt2_traitorshop_enabled", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Enable ShadowTTT2 custom traitor shop")
 
 local function traitorShopEnabled()
   return shopEnabled and shopEnabled:GetBool()
