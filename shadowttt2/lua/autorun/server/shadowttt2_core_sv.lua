@@ -42,6 +42,7 @@ local function getRecoilMultiplier()
 end
 local WALK_SPEED_DEFAULT = 160
 local RUN_SPEED_DEFAULT = 220
+local INFINITE_SPRINT_DEFAULT = 0
 local function clampWalkSpeed(value)
   if not isnumber(value) then return WALK_SPEED_DEFAULT end
   return math.Clamp(value, 50, 500)
@@ -52,6 +53,14 @@ local function clampRunSpeed(value)
 end
 local walkSpeedConVar = CreateConVar("st2_walk_speed", tostring(WALK_SPEED_DEFAULT), {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "ShadowTTT2 walk speed (50-500).")
 local runSpeedConVar = CreateConVar("st2_run_speed", tostring(RUN_SPEED_DEFAULT), {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "ShadowTTT2 run/sprint speed (100-750).")
+local infiniteSprintConVar = CreateConVar("st2_infinite_sprint", tostring(INFINITE_SPRINT_DEFAULT), {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "ShadowTTT2 infinite sprint (0/1).")
+local sprintDrainConVar = GetConVar("ttt_sprint_drain")
+local sprintRegenConVar = GetConVar("ttt_sprint_regen")
+local sprintMaxConVar = GetConVar("ttt_sprint_max")
+local sprintDefaults = {
+  drain = sprintDrainConVar and sprintDrainConVar:GetFloat() or nil,
+  regen = sprintRegenConVar and sprintRegenConVar:GetFloat() or nil
+}
 local function getWalkSpeed()
   if not walkSpeedConVar then return WALK_SPEED_DEFAULT end
   return clampWalkSpeed(walkSpeedConVar:GetFloat())
@@ -59,6 +68,32 @@ end
 local function getRunSpeed()
   if not runSpeedConVar then return RUN_SPEED_DEFAULT end
   return clampRunSpeed(runSpeedConVar:GetFloat())
+end
+local function getInfiniteSprint()
+  if not infiniteSprintConVar then return INFINITE_SPRINT_DEFAULT == 1 end
+  return infiniteSprintConVar:GetBool()
+end
+
+local function applyInfiniteSprintSetting()
+  if not infiniteSprintConVar then return end
+  local enabled = infiniteSprintConVar:GetBool()
+
+  if enabled then
+    if sprintDrainConVar then
+      sprintDrainConVar:SetFloat(0)
+    end
+    if sprintRegenConVar then
+      local max = sprintMaxConVar and sprintMaxConVar:GetFloat() or 100
+      sprintRegenConVar:SetFloat(math.max(max, sprintRegenConVar:GetFloat()))
+    end
+  else
+    if sprintDrainConVar and sprintDefaults.drain ~= nil then
+      sprintDrainConVar:SetFloat(sprintDefaults.drain)
+    end
+    if sprintRegenConVar and sprintDefaults.regen ~= nil then
+      sprintRegenConVar:SetFloat(sprintDefaults.regen)
+    end
+  end
 end
 
 local function applyMoveSpeedToPlayer(ply)
@@ -96,6 +131,10 @@ local function applyMoveSpeeds()
     applyMoveSpeedToPlayer(p)
   end
 end
+
+cvars.AddChangeCallback("st2_infinite_sprint", function()
+  applyInfiniteSprintSetting()
+end, "ST2_InfiniteSprint")
 local MODEL_DATA_PATH = "shadowttt2/playermodels.json"
 local BAN_DATA_PATH = "shadowttt2/bans.json"
 local ANALYTICS_PATH = "shadowttt2/server_analytics.json"
@@ -742,6 +781,10 @@ hook.Add("InitPostEntity", "ST2_PS_REBUILD_MODELS_LATE", function()
   end)
 end)
 
+hook.Add("InitPostEntity", "ST2_INFINITE_SPRINT_INIT", function()
+  applyInfiniteSprintSetting()
+end)
+
 hook.Add("CheckPassword", "ST2_BanCheckPassword", function(steamid64, _, _, _, name)
   local sid = util.SteamIDFrom64(steamid64 or "") or ""
   local allowed, msg = checkBanStatus(sid, name)
@@ -764,6 +807,9 @@ util.AddNetworkString("ST2_ADMIN_RECOIL_SET")
 util.AddNetworkString("ST2_ADMIN_SPEED")
 util.AddNetworkString("ST2_ADMIN_SPEED_REQUEST")
 util.AddNetworkString("ST2_ADMIN_SPEED_SET")
+util.AddNetworkString("ST2_ADMIN_SPRINT")
+util.AddNetworkString("ST2_ADMIN_SPRINT_REQUEST")
+util.AddNetworkString("ST2_ADMIN_SPRINT_SET")
 util.AddNetworkString("ST2_ADMIN_WEAPON_REQUEST")
 util.AddNetworkString("ST2_ADMIN_WEAPON_LIST")
 util.AddNetworkString("ST2_ADMIN_MAPS_REQUEST")
@@ -965,6 +1011,13 @@ local function sendMovementSpeeds(ply)
   net.Send(ply)
 end
 
+local function sendInfiniteSprint(ply)
+  if not IsValid(ply) then return end
+  net.Start("ST2_ADMIN_SPRINT")
+  net.WriteBool(getInfiniteSprint())
+  net.Send(ply)
+end
+
 local function collectWeaponList()
   local seen = {}
   local entries = {}
@@ -1063,6 +1116,7 @@ concommand.Add("shadow_admin_open", function(ply)
   net.Start("ST2_ADMIN_OPEN") net.Send(ply)
   sendRecoilMultiplier(ply)
   sendMovementSpeeds(ply)
+  sendInfiniteSprint(ply)
 end)
 
 concommand.Add("shadowttt2_rebuild_models", function(ply)
@@ -1082,6 +1136,7 @@ net.Receive("ST2_ADMIN_REQUEST", function(_, ply)
   net.Start("ST2_ADMIN_OPEN") net.Send(ply)
   sendRecoilMultiplier(ply)
   sendMovementSpeeds(ply)
+  sendInfiniteSprint(ply)
 end)
 
 net.Receive("ST2_ADMIN_WEAPON_REQUEST", function(_, ply)
@@ -1220,6 +1275,23 @@ net.Receive("ST2_ADMIN_SPEED_SET", function(_, ply)
 
   applyMoveSpeeds()
   sendMovementSpeeds(ply)
+end)
+
+net.Receive("ST2_ADMIN_SPRINT_REQUEST", function(_, ply)
+  if not IsAdmin(ply) then return end
+  sendInfiniteSprint(ply)
+end)
+
+net.Receive("ST2_ADMIN_SPRINT_SET", function(_, ply)
+  if not IsAdmin(ply) then return end
+  local requested = net.ReadBool() and 1 or 0
+  if infiniteSprintConVar then
+    infiniteSprintConVar:SetInt(requested)
+  else
+    RunConsoleCommand("st2_infinite_sprint", tostring(requested))
+  end
+  applyInfiniteSprintSetting()
+  sendInfiniteSprint(ply)
 end)
 
 net.Receive("ST2_ADMIN_UNBAN", function(_, ply)
