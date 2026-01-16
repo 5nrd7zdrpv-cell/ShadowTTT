@@ -1573,6 +1573,16 @@ hook.Add("PlayerSpawn", "ST2_POINTS_SYNC_ON_SPAWN", function(ply)
   end)
 end)
 
+hook.Add("TTTBeginRound", "ST2_PS_APPLY_SAVED_MODELS_ROUND_START", function()
+  timer.Simple(0.25, function()
+    for _, ply in ipairs(player.GetAll()) do
+      if IsValid(ply) and ply:Alive() then
+        applyStoredModel(ply)
+      end
+    end
+  end)
+end)
+
 -- Bootstrap caches on load so model data exists before the first request
 loadAnalytics()
 loadBanData()
