@@ -2047,6 +2047,8 @@ local function requestPointsBalance()
   net.SendToServer()
 end
 
+local updateEquipButton
+
 local function updatePointsDisplay(ui, balance)
   if not ui then return end
   ui.points = balance or 0
@@ -2056,7 +2058,9 @@ local function updatePointsDisplay(ui, balance)
   if IsValid(ui.slotBalance) then
     ui.slotBalance:SetText(string.format("Aktueller Kontostand: %d", ui.points))
   end
-  updateEquipButton(ui)
+  if updateEquipButton then
+    updateEquipButton(ui)
+  end
 end
 
 local function showSlotResult(ui, symbols, text, payout)
@@ -2143,7 +2147,7 @@ local function refreshPointshopList(ui, filter)
   end
 end
 
-local function updateEquipButton(ui)
+updateEquipButton = function(ui)
   if not ui or not IsValid(ui.equipButton) then return end
   local mdl = ui.currentModel
   local price = ui.currentPrice or ui.defaultPrice or pointshopState.defaultPrice or MODEL_PRICE_DEFAULT
@@ -2198,8 +2202,15 @@ local function applyPointshopData(ui, models, activeModel, defaultPrice)
   refreshPointshopList(ui, searchText)
 
   local function selectActiveOrFirst()
+    if not IsValid(ui.list) then return end
+    local lineCount = 0
+    if ui.list.GetLineCount then
+      lineCount = ui.list:GetLineCount()
+    elseif ui.list.GetLines then
+      lineCount = #(ui.list:GetLines() or {})
+    end
     if ui.activeModel and ui.activeModel ~= "" then
-      for i = 1, ui.list:GetLineCount() do
+      for i = 1, lineCount do
         local line = ui.list:GetLine(i)
         if IsValid(line) and line:GetColumnText(1) == ui.activeModel then
           ui.list:SelectItem(line)
@@ -2207,7 +2218,7 @@ local function applyPointshopData(ui, models, activeModel, defaultPrice)
         end
       end
     end
-    if ui.list:GetLineCount() > 0 then
+    if lineCount > 0 and ui.list.SelectFirstItem then
       ui.list:SelectFirstItem()
     end
   end
