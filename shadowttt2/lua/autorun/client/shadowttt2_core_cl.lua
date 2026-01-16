@@ -2649,15 +2649,38 @@ local function openPointshop(models, activeModel, defaultPrice)
   requestPointsBalance()
 end
 
-hook.Add("PlayerButtonDown", "ST2_F3_POINTSHOP_FINAL", function(_, key)
-  if key ~= KEY_F3 then return end
+local function isActiveTraitor(ply)
+  if not IsValid(ply) then return false end
+  if ply.IsActiveTraitor then return ply:IsActiveTraitor() end
+  if ply.IsTraitor then return ply:IsTraitor() end
+  if ply.GetRole and ROLE_TRAITOR then return ply:GetRole() == ROLE_TRAITOR end
+  return false
+end
 
+local function traitorShopWantsKey()
+  local cvar = GetConVar("shadowttt2_traitorshop_enabled")
+  if not cvar or not cvar:GetBool() then return false end
+  return isActiveTraitor(LocalPlayer())
+end
+
+local function requestPointshopOpen()
   if pointshopState.requestPending then return end
   pointshopState.requestPending = true
   pointshopState.openPending = true
   requestPointsBalance()
   net.Start("ST2_PS_MODELS_REQUEST")
   net.SendToServer()
+end
+
+hook.Add("PlayerButtonDown", "ST2_F3_POINTSHOP_FINAL", function(_, key)
+  if key ~= KEY_F3 then return end
+  requestPointshopOpen()
+end)
+
+hook.Add("PlayerButtonDown", "ST2_V_POINTSHOP", function(_, key)
+  if key ~= KEY_V then return end
+  if traitorShopWantsKey() then return end
+  requestPointshopOpen()
 end)
 
 net.Receive("ST2_PS_MODELS", function()
