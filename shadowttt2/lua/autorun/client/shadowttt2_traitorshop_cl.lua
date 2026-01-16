@@ -17,6 +17,14 @@ local snapshot = {
 local refreshUI
 local activeFrame
 
+local function isActiveTraitor(ply)
+  if not IsValid(ply) then return false end
+  if ply.IsActiveTraitor then return ply:IsActiveTraitor() end
+  if ply.IsTraitor then return ply:IsTraitor() end
+  if ply.GetRole and ROLE_TRAITOR then return ply:GetRole() == ROLE_TRAITOR end
+  return false
+end
+
 local THEME = {
   bg = Color(10, 12, 18, 245),
   panel = Color(21, 26, 34, 255),
@@ -515,7 +523,7 @@ end)
 local function openTraitorShop()
   if not traitorShopEnabled() then return end
   local ply = LocalPlayer()
-  if not IsValid(ply) or not ply:IsActiveTraitor() then return end
+  if not isActiveTraitor(ply) then return end
 
   requestSnapshot()
   buildFrame()
