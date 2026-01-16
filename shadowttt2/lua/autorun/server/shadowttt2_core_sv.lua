@@ -890,6 +890,10 @@ util.AddNetworkString("ST2_POINTS_REQUEST")
 util.AddNetworkString("ST2_POINTS_BALANCE")
 util.AddNetworkString("ST2_POINTS_SPIN")
 util.AddNetworkString("ST2_POINTS_SPIN_RESULT")
+util.AddNetworkString("ST2_MAPVOTE_START")
+util.AddNetworkString("ST2_MAPVOTE_TALLY")
+util.AddNetworkString("ST2_MAPVOTE_END")
+util.AddNetworkString("ST2_MAPVOTE_VOTE")
 
 local function ShouldInstantHeadshotKill(target, attacker)
   if not IsValid(target) or not target:IsPlayer() or not target:Alive() then return false end
@@ -986,6 +990,18 @@ broadcastModelSnapshots = function()
 end
 
 local MAP_SEARCH_PATHS = {"GAME", "MOD", "WORKSHOP", "DOWNLOAD"}
+local mapVoteEnabledConVar = CreateConVar("st2_mapvote_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable ShadowTTT2 custom map voting.")
+local mapVoteDurationConVar = CreateConVar("st2_mapvote_duration", "25", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Map vote duration in seconds.")
+local mapVoteOptionsConVar = CreateConVar("st2_mapvote_options", "6", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "How many maps to show in the vote.")
+local mapVoteDelayConVar = CreateConVar("st2_mapvote_change_delay", "6", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Seconds to wait before changing level after vote ends.")
+local mapVoteState = {
+  active = false,
+  options = {},
+  optionSet = {},
+  votes = {},
+  counts = {},
+  endsAt = 0
+}
 
 local function collectMaps()
   local maps = {}
@@ -1021,6 +1037,132 @@ local function collectMaps()
   return list
 end
 
+local function getMapVoteDuration()
+  return math.Clamp(mapVoteDurationConVar:GetInt(), 10, 120)
+end
+
+local function getMapVoteOptions()
+  return math.Clamp(mapVoteOptionsConVar:GetInt(), 2, 12)
+end
+
+local function resetMapVoteState()
+  mapVoteState.active = false
+  mapVoteState.options = {}
+  mapVoteState.optionSet = {}
+  mapVoteState.votes = {}
+  mapVoteState.counts = {}
+  mapVoteState.endsAt = 0
+end
+
+local function sendMapVoteStart(targets)
+  if not mapVoteState.active then return end
+  net.Start("ST2_MAPVOTE_START")
+  net.WriteUInt(#mapVoteState.options, 6)
+  for _, mapName in ipairs(mapVoteState.options) do
+    net.WriteString(mapName)
+  end
+  net.WriteFloat(mapVoteState.endsAt)
+  net.Send(targets)
+end
+
+local function sendMapVoteTally(targets)
+  if not mapVoteState.active then return end
+  net.Start("ST2_MAPVOTE_TALLY")
+  net.WriteUInt(#mapVoteState.options, 6)
+  for _, mapName in ipairs(mapVoteState.options) do
+    net.WriteString(mapName)
+    net.WriteUInt(mapVoteState.counts[mapName] or 0, 12)
+  end
+  net.Send(targets)
+end
+
+local function chooseMapVoteOptions()
+  local maps = collectMaps()
+  if #maps == 0 then return {} end
+  if table.Shuffle then
+    table.Shuffle(maps)
+  else
+    for i = #maps, 2, -1 do
+      local j = math.random(i)
+      maps[i], maps[j] = maps[j], maps[i]
+    end
+  end
+
+  local options = {}
+  local count = math.min(#maps, getMapVoteOptions())
+  for i = 1, count do
+    options[#options + 1] = maps[i]
+  end
+  return options
+end
+
+local function startMapVote()
+  if mapVoteState.active then return end
+  if not mapVoteEnabledConVar:GetBool() then return end
+
+  local options = chooseMapVoteOptions()
+  if #options == 0 then return end
+
+  resetMapVoteState()
+  mapVoteState.active = true
+  mapVoteState.options = options
+  mapVoteState.optionSet = {}
+  for _, mapName in ipairs(options) do
+    mapVoteState.optionSet[mapName] = true
+  end
+  mapVoteState.endsAt = CurTime() + getMapVoteDuration()
+
+  sendMapVoteStart(player.GetAll())
+  sendMapVoteTally(player.GetAll())
+
+  timer.Create("ST2_MapVote_End", getMapVoteDuration(), 1, function()
+    if not mapVoteState.active then return end
+
+    local maxVotes = -1
+    local winners = {}
+    for _, mapName in ipairs(mapVoteState.options) do
+      local count = mapVoteState.counts[mapName] or 0
+      if count > maxVotes then
+        maxVotes = count
+        winners = {mapName}
+      elseif count == maxVotes then
+        winners[#winners + 1] = mapName
+      end
+    end
+
+    if #winners == 0 then
+      winners = mapVoteState.options
+    end
+
+    local winner = winners[math.random(#winners)]
+    net.Start("ST2_MAPVOTE_END")
+    net.WriteString(winner or "")
+    net.Broadcast()
+
+    resetMapVoteState()
+
+    local delay = math.Clamp(mapVoteDelayConVar:GetInt(), 2, 30)
+    if isstring(winner) and winner ~= "" then
+      PrintMessage(HUD_PRINTTALK, string.format("[ShadowTTT2] Map-Voting beendet. Gewinner: %s", winner))
+      timer.Simple(delay, function()
+        RunConsoleCommand("changelevel", winner)
+      end)
+    end
+  end)
+end
+
+concommand.Add("st2_mapvote_start", function(ply)
+  if IsValid(ply) and not IsAdmin(ply) then return end
+  startMapVote()
+end)
+
+hook.Add("TTTEndRound", "ST2_MAPVOTE_ROUND_END", function()
+  if not mapVoteEnabledConVar:GetBool() then return end
+  timer.Simple(2, function()
+    startMapVote()
+  end)
+end)
+
 local function sendAdminMapList(ply)
   if not IsValid(ply) then return end
   local maps = collectMaps()
@@ -1044,6 +1186,16 @@ hook.Add("PlayerInitialSpawn", "ST2_BanEnforceOnJoin", function(ply)
       end
     end)
   end
+end)
+
+hook.Add("PlayerInitialSpawn", "ST2_MapVoteStateOnJoin", function(ply)
+  if not IsValid(ply) then return end
+  if not mapVoteState.active then return end
+  timer.Simple(1, function()
+    if not IsValid(ply) then return end
+    sendMapVoteStart(ply)
+    sendMapVoteTally(ply)
+  end)
 end)
 
 local function applyStoredModel(ply)
@@ -1387,6 +1539,31 @@ net.Receive("ST2_ADMIN_MAP_CHANGE", function(_, ply)
   timer.Simple(2, function()
     RunConsoleCommand("changelevel", mapName)
   end)
+end)
+
+net.Receive("ST2_MAPVOTE_VOTE", function(_, ply)
+  if not mapVoteState.active then return end
+  if not IsValid(ply) then return end
+  local mapName = string.Trim(net.ReadString() or "")
+  if mapName == "" then return end
+  if not mapVoteState.optionSet[mapName] then return end
+
+  local sid = ply:SteamID64()
+  if not sid or sid == "0" then
+    sid = ply:SteamID()
+  end
+  if not sid or sid == "" then return end
+
+  local previous = mapVoteState.votes[sid]
+  if previous == mapName then return end
+  if previous and mapVoteState.counts[previous] then
+    mapVoteState.counts[previous] = math.max(0, mapVoteState.counts[previous] - 1)
+  end
+
+  mapVoteState.votes[sid] = mapName
+  mapVoteState.counts[mapName] = (mapVoteState.counts[mapName] or 0) + 1
+
+  sendMapVoteTally(player.GetAll())
 end)
 
 local function sendAdminPlayerList(ply)

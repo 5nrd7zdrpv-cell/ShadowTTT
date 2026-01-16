@@ -2748,3 +2748,151 @@ net.Receive("ST2_POINTS_SPIN_RESULT", function()
     chat.AddText(Color(120, 200, 120), string.format("[Pointshop] Gewinn! Einsatz %d -> Gewinn %d Punkte", bet, payout))
   end
 end)
+
+do
+  local mapVoteState = {
+    options = {},
+    counts = {},
+    endsAt = 0,
+    selection = nil
+  }
+
+  local function formatMapVoteName(mapName)
+    if not isstring(mapName) then return "" end
+    if string.match(mapName, "%.bsp$") then
+      return mapName
+    end
+    return mapName .. ".bsp"
+  end
+
+  local function updateMapVoteUI(ui)
+    if not IsValid(ui) then return end
+    if not IsValid(ui.timerLabel) then return end
+    local remaining = math.max(0, mapVoteState.endsAt - CurTime())
+    ui.timerLabel:SetText("Endet in: " .. string.NiceTime(math.ceil(remaining)))
+    ui.timerLabel:SizeToContents()
+
+    if IsValid(ui.voteLabel) then
+      if mapVoteState.selection then
+        ui.voteLabel:SetText("Deine Stimme: " .. formatMapVoteName(mapVoteState.selection))
+      else
+        ui.voteLabel:SetText("Deine Stimme: keine")
+      end
+      ui.voteLabel:SizeToContents()
+    end
+  end
+
+  local function createMapVoteUI(options)
+    if IsValid(ShadowTTT2.MapVoteUI) then
+      ShadowTTT2.MapVoteUI:Remove()
+    end
+
+    local f = createFrame("ShadowTTT2 Map Voting", 480, 420)
+    ShadowTTT2.MapVoteUI = f
+
+    local timerLabel = vgui.Create("DLabel", f)
+    timerLabel:SetFont("ST2.Subtitle")
+    timerLabel:SetTextColor(THEME.text)
+    timerLabel:SetPos(20, 70)
+    timerLabel:SetText("Endet in: ...")
+    timerLabel:SizeToContents()
+    f.timerLabel = timerLabel
+
+    local voteLabel = vgui.Create("DLabel", f)
+    voteLabel:SetFont("ST2.Body")
+    voteLabel:SetTextColor(THEME.muted)
+    voteLabel:SetPos(20, 96)
+    voteLabel:SetText("Deine Stimme: keine")
+    voteLabel:SizeToContents()
+    f.voteLabel = voteLabel
+
+    local list = vgui.Create("DScrollPanel", f)
+    list:SetPos(20, 130)
+    list:SetSize(440, 260)
+    f.mapButtons = {}
+
+    local y = 0
+    for _, mapName in ipairs(options) do
+      local btn = vgui.Create("DButton", list)
+      btn:SetSize(420, 44)
+      btn:SetPos(0, y)
+      btn:SetText("")
+      btn.Paint = function(self, w, h)
+        local col = THEME.panel
+        if mapVoteState.selection == mapName then
+          col = THEME.accent
+        elseif self:IsHovered() then
+          col = Color(255, 170, 110)
+        end
+        draw.RoundedBox(10, 0, 0, w, h, col)
+        local label = string.format("%s (%d)", formatMapVoteName(mapName), mapVoteState.counts[mapName] or 0)
+        draw.SimpleText(label, "ST2.Body", 12, h / 2, THEME.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+      end
+      btn.DoClick = function()
+        mapVoteState.selection = mapName
+        net.Start("ST2_MAPVOTE_VOTE")
+        net.WriteString(mapName)
+        net.SendToServer()
+        updateMapVoteUI(f)
+      end
+      f.mapButtons[mapName] = btn
+      y = y + 50
+    end
+
+    f.Think = function()
+      updateMapVoteUI(f)
+    end
+  end
+
+  net.Receive("ST2_MAPVOTE_START", function()
+    local count = net.ReadUInt(6)
+    local options = {}
+    for i = 1, count do
+      options[i] = net.ReadString()
+    end
+    mapVoteState.options = options
+    mapVoteState.counts = {}
+    mapVoteState.selection = nil
+    mapVoteState.endsAt = net.ReadFloat()
+    createMapVoteUI(options)
+  end)
+
+  net.Receive("ST2_MAPVOTE_TALLY", function()
+    local count = net.ReadUInt(6)
+    local counts = {}
+    for _ = 1, count do
+      local mapName = net.ReadString()
+      counts[mapName] = net.ReadUInt(12)
+    end
+    mapVoteState.counts = counts
+    if IsValid(ShadowTTT2.MapVoteUI) then
+      ShadowTTT2.MapVoteUI:InvalidateLayout(true)
+    end
+  end)
+
+  net.Receive("ST2_MAPVOTE_END", function()
+    local winner = net.ReadString()
+    local ui = ShadowTTT2.MapVoteUI
+    if not IsValid(ui) then return end
+    if IsValid(ui.timerLabel) then
+      ui.timerLabel:SetText("Gewinner: " .. formatMapVoteName(winner))
+      ui.timerLabel:SizeToContents()
+    end
+    if IsValid(ui.voteLabel) then
+      ui.voteLabel:SetText("Danke fürs Abstimmen!")
+      ui.voteLabel:SizeToContents()
+    end
+    if ui.mapButtons then
+      for _, btn in pairs(ui.mapButtons) do
+        if IsValid(btn) then
+          btn:SetEnabled(false)
+        end
+      end
+    end
+    timer.Simple(5, function()
+      if IsValid(ui) then
+        ui:Close()
+      end
+    end)
+  end)
+end
