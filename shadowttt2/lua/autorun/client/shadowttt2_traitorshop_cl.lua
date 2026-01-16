@@ -1,6 +1,9 @@
 
 print("[ShadowTTT2] Traitor Shop // Nova Forge UI")
 
+ShadowTTT2 = ShadowTTT2 or {}
+ShadowTTT2.TraitorShop = ShadowTTT2.TraitorShop or {}
+
 local function traitorShopEnabled()
   local cvar = GetConVar("shadowttt2_traitorshop_enabled")
   return cvar and cvar:GetBool()
@@ -16,6 +19,7 @@ local snapshot = {
 
 local refreshUI
 local activeFrame
+local externalRefreshers = {}
 
 local function isActiveTraitor(ply)
   if not IsValid(ply) then return false end
@@ -48,6 +52,11 @@ local function requestSnapshot()
   if not traitorShopEnabled() then return end
   net.Start("ST2_TS_SYNC_REQUEST")
   net.SendToServer()
+end
+
+local function canAccessTraitorShop()
+  local ply = LocalPlayer()
+  return traitorShopEnabled() and isActiveTraitor(ply)
 end
 
 local function formatTime(rem)
@@ -471,6 +480,113 @@ local function buildWorkshopTab(parent)
   return container, refresh
 end
 
+local function buildTraitorShopPanel(parent)
+  local container = vgui.Create("DPanel", parent)
+  container:Dock(FILL)
+  container.Paint = function(_, w, h)
+    draw.RoundedBox(12, 0, 0, w, h, Color(18, 22, 30, 255))
+  end
+
+  local intro = vgui.Create("DPanel", container)
+  intro:Dock(TOP)
+  intro:DockMargin(16, 16, 16, 10)
+  intro:SetTall(54)
+  intro.Paint = function(_, w, h)
+    draw.RoundedBox(10, 0, 0, w, h, Color(28, 32, 44, 230))
+  end
+
+  local title = vgui.Create("DLabel", intro)
+  title:Dock(TOP)
+  title:DockMargin(12, 8, 12, 0)
+  title:SetFont("ST2.Title")
+  title:SetTextColor(THEME.text)
+  title:SetText("Traitor Workshop")
+
+  local subtitle = vgui.Create("DLabel", intro)
+  subtitle:Dock(TOP)
+  subtitle:DockMargin(12, 2, 12, 0)
+  subtitle:SetFont("ST2.Small")
+  subtitle:SetTextColor(THEME.muted)
+  subtitle:SetText("Baue, kaufe und optimiere deine Ausrüstung.")
+
+  local state = vgui.Create("DLabel", container)
+  state:Dock(FILL)
+  state:DockMargin(24, 0, 24, 24)
+  state:SetFont("ST2.Body")
+  state:SetTextColor(THEME.muted)
+  state:SetWrap(true)
+  state:SetContentAlignment(5)
+
+  local content = vgui.Create("DPanel", container)
+  content:Dock(FILL)
+  content:DockMargin(16, 0, 16, 16)
+  content.Paint = function() end
+
+  local statsUpdater = buildStatsBar(content)
+
+  local tabs = vgui.Create("DPropertySheet", content)
+  tabs:Dock(FILL)
+  tabs:SetFadeTime(0)
+  tabs.Paint = function(self, w, h)
+    draw.RoundedBox(12, 0, 0, w, h, Color(14, 18, 26, 255))
+  end
+  function tabs:PaintTab(tab, w, h)
+    local active = self:GetActiveTab() == tab
+    local col = active and THEME.accentSoft or THEME.panel
+    draw.RoundedBox(8, 0, 0, w, h, col)
+    draw.SimpleText(tab:GetText(), "ST2.Body", 12, h / 2, color_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+  end
+
+  local shopPanel, shopRefresh = buildShopTab(tabs)
+  local workshopPanel, workshopRefresh = buildWorkshopTab(tabs)
+
+  tabs:AddSheet("Shop", shopPanel, "icon16/cart.png")
+  tabs:AddSheet("Werkstatt", workshopPanel, "icon16/wrench.png")
+
+  local function refresh()
+    if not IsValid(container) then return false end
+    local enabled = traitorShopEnabled()
+    local canAccess = enabled and isActiveTraitor(LocalPlayer())
+    if IsValid(content) then content:SetVisible(canAccess) end
+    if IsValid(state) then
+      state:SetVisible(not canAccess)
+      if not enabled then
+        state:SetText("Der Traitor Shop ist serverseitig deaktiviert.")
+      else
+        state:SetText("Der Traitor Shop ist nur für aktive Traitor verfügbar.")
+      end
+    end
+    if canAccess then
+      if statsUpdater then statsUpdater() end
+      if shopRefresh then shopRefresh() end
+      if workshopRefresh then workshopRefresh() end
+    end
+    return true
+  end
+
+  refresh()
+  return container, refresh
+end
+
+local function registerExternalRefresh(fn)
+  if not isfunction(fn) then return end
+  table.insert(externalRefreshers, fn)
+end
+
+local function runExternalRefreshers()
+  for i = #externalRefreshers, 1, -1 do
+    local fn = externalRefreshers[i]
+    if not isfunction(fn) then
+      table.remove(externalRefreshers, i)
+    else
+      local ok = fn()
+      if ok == false then
+        table.remove(externalRefreshers, i)
+      end
+    end
+  end
+end
+
 local function buildFrame()
   if IsValid(activeFrame) then activeFrame:Remove() end
 
@@ -497,32 +613,11 @@ local function buildFrame()
   content:DockMargin(16, 96, 16, 16)
   content.Paint = function() end
 
-  local statsUpdater = buildStatsBar(content)
-
-  local tabs = vgui.Create("DPropertySheet", content)
-  tabs:Dock(FILL)
-  tabs:SetFadeTime(0)
-  tabs.Paint = function(self, w, h)
-    draw.RoundedBox(12, 0, 0, w, h, Color(14, 18, 26, 255))
-  end
-  function tabs:PaintTab(tab, w, h)
-    local active = self:GetActiveTab() == tab
-    local col = active and THEME.accentSoft or THEME.panel
-    draw.RoundedBox(8, 0, 0, w, h, col)
-    draw.SimpleText(tab:GetText(), "ST2.Body", 12, h / 2, color_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-  end
-
-  local shopPanel, shopRefresh = buildShopTab(tabs)
-  local workshopPanel, workshopRefresh = buildWorkshopTab(tabs)
-
-  tabs:AddSheet("Shop", shopPanel, "icon16/cart.png")
-  tabs:AddSheet("Werkstatt", workshopPanel, "icon16/wrench.png")
+  local _, refresh = buildTraitorShopPanel(content)
 
   refreshUI = function()
     if not IsValid(activeFrame) then return end
-    if statsUpdater then statsUpdater() end
-    if shopRefresh then shopRefresh() end
-    if workshopRefresh then workshopRefresh() end
+    if refresh then refresh() end
   end
 end
 
@@ -542,6 +637,7 @@ net.Receive("ST2_TS_SYNC", function()
   if isfunction(refreshUI) then
     refreshUI()
   end
+  runExternalRefreshers()
 end)
 
 local function openTraitorShop()
@@ -552,6 +648,18 @@ local function openTraitorShop()
   requestSnapshot()
   buildFrame()
 end
+
+ShadowTTT2.TraitorShop.BuildPanel = function(parent)
+  return buildTraitorShopPanel(parent)
+end
+
+ShadowTTT2.TraitorShop.RequestSnapshot = requestSnapshot
+
+ShadowTTT2.TraitorShop.CanAccess = function()
+  return canAccessTraitorShop()
+end
+
+ShadowTTT2.TraitorShop.RegisterRefresh = registerExternalRefresh
 
 hook.Add("PlayerButtonDown", "ST2_TS_PHASE3_FIX", function(ply, key)
   if ply ~= LocalPlayer() then return end
