@@ -2657,12 +2657,6 @@ local function isActiveTraitor(ply)
   return false
 end
 
-local function traitorShopWantsKey()
-  local cvar = GetConVar("shadowttt2_traitorshop_enabled")
-  if not cvar or not cvar:GetBool() then return false end
-  return isActiveTraitor(LocalPlayer())
-end
-
 local function requestPointshopOpen()
   if pointshopState.requestPending then return end
   pointshopState.requestPending = true
@@ -2677,11 +2671,6 @@ hook.Add("PlayerButtonDown", "ST2_F3_POINTSHOP_FINAL", function(_, key)
   requestPointshopOpen()
 end)
 
-hook.Add("PlayerButtonDown", "ST2_V_POINTSHOP", function(_, key)
-  if key ~= KEY_V then return end
-  if traitorShopWantsKey() then return end
-  requestPointshopOpen()
-end)
 
 net.Receive("ST2_PS_MODELS", function()
   local defaultPrice = net.ReadUInt(16)
