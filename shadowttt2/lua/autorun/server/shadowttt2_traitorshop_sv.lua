@@ -42,6 +42,14 @@ local ShopConfig = {
 
 local TRAITOR_ROLE = ROLE_TRAITOR or 2
 
+local function isActiveTraitor(ply)
+  if not IsValid(ply) then return false end
+  if ply.IsActiveTraitor then return ply:IsActiveTraitor() end
+  if ply.IsTraitor then return ply:IsTraitor() end
+  if ply.GetRole and ROLE_TRAITOR then return ply:GetRole() == ROLE_TRAITOR end
+  return false
+end
+
 local function isAdmin(ply)
   if ShadowTTT2 and ShadowTTT2.IsAdmin then
     return ShadowTTT2.IsAdmin(ply)
@@ -222,7 +230,7 @@ local function resetAllPlayers()
 end
 
 local function canAccessShop(ply)
-  return traitorShopEnabled() and IsValid(ply) and ply:IsActiveTraitor()
+  return traitorShopEnabled() and isActiveTraitor(ply)
 end
 
 local function sendSnapshot(ply)
