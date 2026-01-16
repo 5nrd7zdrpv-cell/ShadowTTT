@@ -360,6 +360,7 @@ local function buildShopTab(parent)
 
   local refreshers = {}
   local activeFilter = "all"
+  local lastCatalogue = nil
 
   local function rebuild()
     list:Clear()
@@ -395,15 +396,30 @@ local function buildShopTab(parent)
     end
   end
 
-  addFilter("all", "Alles")
-  for catId, cat in pairs(snapshot.catalogue or {}) do
-    addFilter(catId, cat.name or catId)
+  local function rebuildFilters()
+    local catalogue = snapshot.catalogue or {}
+    if lastCatalogue == catalogue then return end
+    lastCatalogue = catalogue
+
+    filterRow:Clear()
+    addFilter("all", "Alles")
+    for catId, cat in pairs(catalogue) do
+      addFilter(catId, cat.name or catId)
+    end
+
+    if activeFilter ~= "all" and not catalogue[activeFilter] then
+      activeFilter = "all"
+    end
+    filterRow:InvalidateLayout(true)
   end
 
   search.OnChange = rebuild
+  rebuildFilters()
   rebuild()
 
   local function refresh()
+    rebuildFilters()
+    rebuild()
     for _, fn in ipairs(refreshers) do
       fn()
     end
@@ -434,16 +450,24 @@ local function buildWorkshopTab(parent)
   list:SetSpaceY(12)
 
   local refreshers = {}
-  for _, blueprint in ipairs(snapshot.blueprints or {}) do
-    table.insert(refreshers, buildWorkshopCard(list, blueprint))
+
+  local function rebuildCards()
+    list:Clear()
+    table.Empty(refreshers)
+    for _, blueprint in ipairs(snapshot.blueprints or {}) do
+      table.insert(refreshers, buildWorkshopCard(list, blueprint))
+    end
+    list:InvalidateLayout(true)
   end
 
   local function refresh()
+    rebuildCards()
     for _, fn in ipairs(refreshers) do
       fn()
     end
   end
 
+  rebuildCards()
   return container, refresh
 end
 
