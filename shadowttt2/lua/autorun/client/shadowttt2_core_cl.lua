@@ -453,6 +453,11 @@ do -- Admin panel helpers
     net.SendToServer()
   end
 
+  local function requestInfiniteSprint()
+    net.Start("ST2_ADMIN_SPRINT_REQUEST")
+    net.SendToServer()
+  end
+
   local function populateWeaponDropdown(dropdown, weapons, filter, previousSelection)
     if not IsValid(dropdown) then return end
 
@@ -542,6 +547,12 @@ do -- Admin panel helpers
     net.SendToServer()
   end
 
+  local function sendInfiniteSprint(enabled)
+    net.Start("ST2_ADMIN_SPRINT_SET")
+    net.WriteBool(enabled and true or false)
+    net.SendToServer()
+  end
+
   net.Receive("ST2_ADMIN_RECOIL", function()
     local value = net.ReadFloat()
     local ui = ShadowTTT2.AdminUI
@@ -564,6 +575,16 @@ do -- Admin panel helpers
 
     if IsValid(ui.runSlider) then
       ui.runSlider:SetValue(math.Round(run or 0, 0))
+    end
+  end)
+
+  net.Receive("ST2_ADMIN_SPRINT", function()
+    local enabled = net.ReadBool()
+    local ui = ShadowTTT2.AdminUI
+    if not ui then return end
+
+    if IsValid(ui.infiniteSprintCheck) then
+      ui.infiniteSprintCheck:SetChecked(enabled)
     end
   end)
 
@@ -1170,7 +1191,7 @@ do -- Admin panel helpers
     end
 
     local speedPanel = actionGrid:Add("DPanel")
-    speedPanel:SetSize(230, 190)
+    speedPanel:SetSize(230, 230)
     speedPanel.Paint = function(_, w, h)
       draw.RoundedBox(12, 0, 0, w, h, Color(32, 32, 42, 230))
     end
@@ -1203,6 +1224,14 @@ do -- Admin panel helpers
     runSlider:SetDecimals(0)
     runSlider:SetValue(220)
 
+    local sprintToggle = vgui.Create("DCheckBoxLabel", speedPanel)
+    sprintToggle:Dock(TOP)
+    sprintToggle:DockMargin(10, 2, 10, 0)
+    sprintToggle:SetTall(22)
+    sprintToggle:SetText("Unendlich sprinten")
+    sprintToggle:SetFont("ST2.Body")
+    sprintToggle:SetTextColor(THEME.text)
+
     local speedHint = vgui.Create("DLabel", speedPanel)
     speedHint:Dock(TOP)
     speedHint:DockMargin(10, 4, 10, 4)
@@ -1221,6 +1250,9 @@ do -- Admin panel helpers
     speedApply.DoClick = function()
       if not (IsValid(walkSlider) and IsValid(runSlider)) then return end
       sendMovementSpeeds(walkSlider:GetValue(), runSlider:GetValue())
+      if IsValid(sprintToggle) then
+        sendInfiniteSprint(sprintToggle:GetChecked())
+      end
     end
 
     local kickPanel = actionGrid:Add("DPanel")
@@ -1947,6 +1979,7 @@ do -- Admin panel helpers
       recoilSlider = recoilSlider,
       walkSlider = walkSlider,
       runSlider = runSlider,
+      infiniteSprintCheck = sprintToggle,
       weaponDropdown = giveWeaponDropdown,
       weaponSearch = giveWeaponSearch,
       shopWeaponDropdown = shopWeaponDropdown,
@@ -1977,6 +2010,7 @@ do -- Admin panel helpers
     sendPointshopAdminRequest()
     requestRecoilMultiplier()
     requestMovementSpeeds()
+    requestInfiniteSprint()
     requestWeaponList()
     requestMapList()
     populateBanList(banList, {}, "")
