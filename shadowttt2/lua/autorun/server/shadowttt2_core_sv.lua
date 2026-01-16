@@ -985,7 +985,7 @@ broadcastModelSnapshots = function()
   end
 end
 
-local MAP_SEARCH_PATHS = {"GAME", "MOD"}
+local MAP_SEARCH_PATHS = {"GAME", "MOD", "WORKSHOP", "DOWNLOAD"}
 
 local function collectMaps()
   local maps = {}
