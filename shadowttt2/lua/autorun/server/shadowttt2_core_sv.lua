@@ -390,12 +390,14 @@ local function loadModelData()
     ShadowTTT2.ModelData.enabled = decoded.enabled or {}
     ShadowTTT2.ModelData.prices = decoded.prices or {}
     ShadowTTT2.ModelData.version = decoded.version or 0
+    ShadowTTT2.ModelData.owned = decoded.owned or {}
   else
     ShadowTTT2.ModelData.models = {}
     ShadowTTT2.ModelData.selected = {}
     ShadowTTT2.ModelData.enabled = {}
     ShadowTTT2.ModelData.prices = {}
     ShadowTTT2.ModelData.version = 0
+    ShadowTTT2.ModelData.owned = {}
   end
 
   ShadowTTT2.ModelData.modelSet = {}
@@ -409,6 +411,7 @@ local function loadModelData()
   ShadowTTT2.ModelData.models = filtered
   ShadowTTT2.ModelData.enabled = ShadowTTT2.ModelData.enabled or {}
   ShadowTTT2.ModelData.prices = ShadowTTT2.ModelData.prices or {}
+  ShadowTTT2.ModelData.owned = ShadowTTT2.ModelData.owned or {}
   for mdl, price in pairs(ShadowTTT2.ModelData.prices) do
     ShadowTTT2.ModelData.prices[mdl] = normalizeModelPrice(price)
   end
@@ -447,6 +450,27 @@ local function loadModelData()
     end
   end
 
+  for sid, owned in pairs(ShadowTTT2.ModelData.owned) do
+    if not istable(owned) then
+      ShadowTTT2.ModelData.owned[sid] = nil
+      changed = true
+    else
+      local hasEntries = false
+      for mdl, _ in pairs(owned) do
+        if not ShadowTTT2.ModelData.modelSet[mdl] then
+          owned[mdl] = nil
+          changed = true
+        else
+          hasEntries = true
+        end
+      end
+      if not hasEntries then
+        ShadowTTT2.ModelData.owned[sid] = nil
+        changed = true
+      end
+    end
+  end
+
   if changed then
     saveModelData()
   end
@@ -459,6 +483,7 @@ local function saveModelData()
     selected = ShadowTTT2.ModelData.selected or {},
     enabled = ShadowTTT2.ModelData.enabled or {},
     prices = ShadowTTT2.ModelData.prices or {},
+    owned = ShadowTTT2.ModelData.owned or {},
     version = MODEL_CACHE_VERSION
   }, true))
 end
@@ -484,6 +509,26 @@ local function getSelectedModelForPlayer(ply, data)
   if legacy then
     data.selected[sid] = legacy
     data.selected[sid64] = nil
+    saveModelData()
+    return legacy
+  end
+
+  return nil
+end
+
+local function getOwnedModelsForPlayer(ply, data)
+  if not IsValid(ply) or not data then return nil end
+  data.owned = data.owned or {}
+  local sid = ply:SteamID()
+  if sid and istable(data.owned[sid]) then
+    return data.owned[sid]
+  end
+
+  local sid64 = ply:SteamID64()
+  local legacy = sid64 and data.owned[sid64]
+  if legacy and istable(legacy) then
+    data.owned[sid] = legacy
+    data.owned[sid64] = nil
     saveModelData()
     return legacy
   end
@@ -681,6 +726,25 @@ local function rebuildModelList()
   for mdl, _ in pairs(ShadowTTT2.ModelData.prices) do
     if not set[mdl] then
       ShadowTTT2.ModelData.prices[mdl] = nil
+    end
+  end
+
+  ShadowTTT2.ModelData.owned = ShadowTTT2.ModelData.owned or {}
+  for sid, owned in pairs(ShadowTTT2.ModelData.owned) do
+    if not istable(owned) then
+      ShadowTTT2.ModelData.owned[sid] = nil
+    else
+      local hasEntries = false
+      for mdl, _ in pairs(owned) do
+        if not set[mdl] then
+          owned[mdl] = nil
+        else
+          hasEntries = true
+        end
+      end
+      if not hasEntries then
+        ShadowTTT2.ModelData.owned[sid] = nil
+      end
     end
   end
   saveModelData()
@@ -1382,23 +1446,31 @@ net.Receive("ST2_PS_EQUIP", function(_, ply)
 
   local sid = ply:SteamID()
   local current = sid and data.selected and data.selected[sid]
+  local owned = getOwnedModelsForPlayer(ply, data) or {}
   if current ~= mdl then
-    ensureStarterPoints(ply)
-    local price = getModelPrice(mdl)
-    if price > 0 then
-      local balance = getPoints(ply)
-      if balance < price then
-        ply:ChatPrint(string.format("[ShadowTTT2] Nicht genug Punkte: %d benötigt, %d verfügbar.", price, balance))
-        sendPointsBalance(ply)
-        return
+    if not owned[mdl] then
+      ensureStarterPoints(ply)
+      local price = getModelPrice(mdl)
+      if price > 0 then
+        local balance = getPoints(ply)
+        if balance < price then
+          ply:ChatPrint(string.format("[ShadowTTT2] Nicht genug Punkte: %d benötigt, %d verfügbar.", price, balance))
+          sendPointsBalance(ply)
+          return
+        end
+        setPoints(ply, balance - price)
       end
-      setPoints(ply, balance - price)
     end
   end
 
   applyPlayerModel(ply, mdl)
   data.selected = data.selected or {}
   data.selected[sid] = mdl
+  data.owned = data.owned or {}
+  if sid then
+    data.owned[sid] = data.owned[sid] or {}
+    data.owned[sid][mdl] = true
+  end
   trackModelUsage(mdl)
   saveModelData()
   sendPointsBalance(ply)
