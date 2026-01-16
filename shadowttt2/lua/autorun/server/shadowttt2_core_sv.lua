@@ -1156,7 +1156,7 @@ concommand.Add("st2_mapvote_start", function(ply)
   startMapVote()
 end)
 
-hook.Add("TTTEndRound", "ST2_MAPVOTE_ROUND_END", function()
+hook.Add("TTTGameOver", "ST2_MAPVOTE_GAME_OVER", function()
   if not mapVoteEnabledConVar:GetBool() then return end
   timer.Simple(2, function()
     startMapVote()
