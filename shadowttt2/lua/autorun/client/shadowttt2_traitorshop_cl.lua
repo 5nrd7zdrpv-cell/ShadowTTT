@@ -512,13 +512,28 @@ net.Receive("ST2_TS_SYNC", function()
   end
 end)
 
-hook.Add("PlayerButtonDown","ST2_TS_PHASE3_FIX",function(_,key)
-  if key ~= KEY_C then return end
+local function openTraitorShop()
   if not traitorShopEnabled() then return end
-  if not LocalPlayer():IsActiveTraitor() then return end
+  local ply = LocalPlayer()
+  if not IsValid(ply) or not ply:IsActiveTraitor() then return end
 
   requestSnapshot()
   buildFrame()
+end
+
+hook.Add("PlayerButtonDown", "ST2_TS_PHASE3_FIX", function(ply, key)
+  if ply ~= LocalPlayer() then return end
+  if key ~= KEY_C then return end
+
+  openTraitorShop()
+end)
+
+hook.Add("PlayerBindPress", "ST2_TS_CONTEXT_BIND", function(ply, bind, pressed)
+  if ply ~= LocalPlayer() or not pressed then return end
+  if not bind or not string.find(string.lower(bind), "menu_context", 1, true) then return end
+
+  openTraitorShop()
+  return true
 end)
 
 cvars.AddChangeCallback("shadowttt2_traitorshop_enabled", function(_, _, new)
