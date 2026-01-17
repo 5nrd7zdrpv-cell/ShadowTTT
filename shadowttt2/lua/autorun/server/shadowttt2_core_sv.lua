@@ -1236,6 +1236,16 @@ local mapVoteState = {
   endsAt = 0
 }
 
+local function getMapVotePlayerId(ply)
+  if not IsValid(ply) then return nil end
+  local sid = ply:SteamID64()
+  if not sid or sid == "0" then
+    sid = ply:SteamID()
+  end
+  if not sid or sid == "" then return nil end
+  return sid
+end
+
 local function collectMaps()
   local maps = {}
   local function addMaps(pattern)
@@ -1912,11 +1922,8 @@ net.Receive("ST2_MAPVOTE_VOTE", function(_, ply)
   if mapName == "" then return end
   if not mapVoteState.optionSet[mapName] then return end
 
-  local sid = ply:SteamID64()
-  if not sid or sid == "0" then
-    sid = ply:SteamID()
-  end
-  if not sid or sid == "" then return end
+  local sid = getMapVotePlayerId(ply)
+  if not sid then return end
 
   local previous = mapVoteState.votes[sid]
   if previous == mapName then return end
@@ -1926,6 +1933,22 @@ net.Receive("ST2_MAPVOTE_VOTE", function(_, ply)
 
   mapVoteState.votes[sid] = mapName
   mapVoteState.counts[mapName] = (mapVoteState.counts[mapName] or 0) + 1
+
+  sendMapVoteTally(player.GetAll())
+end)
+
+hook.Add("PlayerDisconnected", "ST2_MapVote_RemoveVoteOnDisconnect", function(ply)
+  if not mapVoteState.active then return end
+  local sid = getMapVotePlayerId(ply)
+  if not sid then return end
+
+  local previous = mapVoteState.votes[sid]
+  if not previous then return end
+
+  mapVoteState.votes[sid] = nil
+  if mapVoteState.counts[previous] then
+    mapVoteState.counts[previous] = math.max(0, mapVoteState.counts[previous] - 1)
+  end
 
   sendMapVoteTally(player.GetAll())
 end)
