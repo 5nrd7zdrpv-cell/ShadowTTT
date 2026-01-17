@@ -136,6 +136,7 @@ cvars.AddChangeCallback("st2_infinite_sprint", function()
   applyInfiniteSprintSetting()
 end, "ST2_InfiniteSprint")
 local MODEL_DATA_PATH = "shadowttt2/playermodels.json"
+local TRAITORSHOP_DATA_PATH = "shadowttt2/traitorshop.json"
 local BAN_DATA_PATH = "shadowttt2/bans.json"
 local ANALYTICS_PATH = "shadowttt2/server_analytics.json"
 local ANALYTICS_VERSION = 1
@@ -203,6 +204,231 @@ local function ensureDataDir()
   if not file.Exists("shadowttt2", "DATA") then
     file.CreateDir("shadowttt2")
   end
+end
+
+local function loadTraitorShopData()
+  ensureDataDir()
+  local raw = file.Exists(TRAITORSHOP_DATA_PATH, "DATA") and file.Read(TRAITORSHOP_DATA_PATH, "DATA")
+  local decoded = raw and util.JSONToTable(raw)
+  if istable(decoded) then
+    ShadowTTT2.TraitorShopData = {
+      enabled = istable(decoded.enabled) and decoded.enabled or {},
+      prices = istable(decoded.prices) and decoded.prices or {},
+      added = istable(decoded.added) and decoded.added or {}
+    }
+  else
+    ShadowTTT2.TraitorShopData = {
+      enabled = {},
+      prices = {},
+      added = {}
+    }
+  end
+end
+
+local function saveTraitorShopData()
+  ensureDataDir()
+  local payload = {
+    enabled = ShadowTTT2.TraitorShopData and ShadowTTT2.TraitorShopData.enabled or {},
+    prices = ShadowTTT2.TraitorShopData and ShadowTTT2.TraitorShopData.prices or {},
+    added = ShadowTTT2.TraitorShopData and ShadowTTT2.TraitorShopData.added or {}
+  }
+  file.Write(TRAITORSHOP_DATA_PATH, util.TableToJSON(payload, true))
+end
+
+local function copySimpleTable(tbl)
+  if not istable(tbl) then return nil end
+  local copy = {}
+  for k, v in pairs(tbl) do
+    copy[k] = v
+  end
+  return copy
+end
+
+local function canRoleBuy(canBuy, roleId)
+  if not istable(canBuy) then return false end
+  for _, role in ipairs(canBuy) do
+    if role == roleId then return true end
+  end
+  return false
+end
+
+local function setRoleInCanBuy(canBuy, roleId, enabled)
+  local list = istable(canBuy) and copySimpleTable(canBuy) or {}
+  local has = false
+  for i = #list, 1, -1 do
+    if list[i] == roleId then
+      if not enabled then
+        table.remove(list, i)
+      else
+        has = true
+      end
+    end
+  end
+  if enabled and not has then
+    table.insert(list, roleId)
+  end
+  if #list == 0 then
+    return nil
+  end
+  return list
+end
+
+local function getShopItemId(item)
+  if not item then return nil end
+  if isstring(item.id) and item.id ~= "" then return item.id end
+  if isstring(item.ClassName) and item.ClassName ~= "" then return item.ClassName end
+  if isstring(item.Classname) and item.Classname ~= "" then return item.Classname end
+  if isstring(item.Class) and item.Class ~= "" then return item.Class end
+  return nil
+end
+
+local function getShopItemDisplay(item, id)
+  local name = ""
+  if item then
+    if isstring(item.name) and item.name ~= "" then
+      name = item.name
+    elseif isstring(item.PrintName) and item.PrintName ~= "" then
+      name = item.PrintName
+    end
+  end
+  if name == "" then
+    name = id or ""
+  end
+  local category = ""
+  if item then
+    category = item.category or item.kind or item.slot or ""
+  end
+  if category == "" then
+    category = "workshop"
+  end
+  local author = ""
+  if item then
+    author = item.author or item.creator or item.Author or ""
+  end
+  return name, category, author
+end
+
+local function getShopItemPrice(item, fallback)
+  if not item then return fallback end
+  local value = item.credits or item.cost
+  value = tonumber(value)
+  if not value then return fallback end
+  return math.max(0, math.floor(value))
+end
+
+local function getTraitorShopDefaults()
+  ShadowTTT2.TraitorShopDefaults = ShadowTTT2.TraitorShopDefaults or {}
+  return ShadowTTT2.TraitorShopDefaults
+end
+
+local function collectShopSources()
+  local entries = {}
+  if items and isfunction(items.GetList) then
+    for _, item in pairs(items.GetList()) do
+      entries[#entries + 1] = item
+    end
+  else
+    for _, wep in ipairs(weapons.GetList() or {}) do
+      entries[#entries + 1] = wep
+    end
+  end
+  return entries
+end
+
+local function getShopItemById(id)
+  if not isstring(id) or id == "" then return nil end
+  if items and isfunction(items.GetStored) then
+    local item = items.GetStored(id)
+    if item then return item end
+  end
+  return weapons.GetStored(id)
+end
+
+local function applyTraitorShopOverrides()
+  ShadowTTT2.TraitorShopData = ShadowTTT2.TraitorShopData or {enabled = {}, prices = {}, added = {}}
+  local data = ShadowTTT2.TraitorShopData
+  local defaults = getTraitorShopDefaults()
+
+  for _, item in ipairs(collectShopSources()) do
+    local id = getShopItemId(item)
+    if not id then continue end
+
+    if not defaults[id] then
+      defaults[id] = {
+        canBuy = copySimpleTable(item.CanBuy),
+        price = getShopItemPrice(item, nil)
+      }
+    end
+
+    local originalCanBuy = defaults[id].canBuy
+    local originalAllowed = canRoleBuy(originalCanBuy, ROLE_TRAITOR)
+    local enabledOverride = data.enabled[id]
+    local shouldEnable = enabledOverride
+    if shouldEnable == nil then
+      shouldEnable = data.added[id] or originalAllowed
+    end
+
+    local updatedCanBuy = setRoleInCanBuy(originalCanBuy, ROLE_TRAITOR, shouldEnable)
+    item.CanBuy = updatedCanBuy
+
+    if data.prices[id] ~= nil then
+      item.credits = math.max(0, math.floor(tonumber(data.prices[id]) or 0))
+    elseif defaults[id].price ~= nil then
+      item.credits = defaults[id].price
+    end
+  end
+end
+
+local function collectTraitorShopEntries()
+  ShadowTTT2.TraitorShopData = ShadowTTT2.TraitorShopData or {enabled = {}, prices = {}, added = {}}
+  local data = ShadowTTT2.TraitorShopData
+  local defaults = getTraitorShopDefaults()
+  local entries = {}
+
+  for _, item in ipairs(collectShopSources()) do
+    local id = getShopItemId(item)
+    if not id then continue end
+
+    if not defaults[id] then
+      defaults[id] = {
+        canBuy = copySimpleTable(item.CanBuy),
+        price = getShopItemPrice(item, nil)
+      }
+    end
+
+    local originalAllowed = canRoleBuy(defaults[id].canBuy, ROLE_TRAITOR)
+    if not originalAllowed and not data.added[id] and data.enabled[id] == nil then continue end
+
+    local name, category, author = getShopItemDisplay(item, id)
+    local price = data.prices[id]
+    if price == nil then
+      price = getShopItemPrice(item, defaults[id].price or 1)
+    end
+    local enabled = data.enabled[id]
+    if enabled == nil then
+      enabled = originalAllowed or data.added[id]
+    end
+
+    entries[#entries + 1] = {
+      id = id,
+      name = name,
+      price = price,
+      enabled = enabled and true or false,
+      category = category,
+      author = author
+    }
+  end
+
+  table.sort(entries, function(a, b)
+    local aName = string.lower(a.name or a.id or "")
+    local bName = string.lower(b.name or b.id or "")
+    if aName == bName then
+      return string.lower(a.id or "") < string.lower(b.id or "")
+    end
+    return aName < bName
+  end)
+
+  return entries
 end
 
 local function loadAnalytics()
@@ -879,6 +1105,12 @@ util.AddNetworkString("ST2_ADMIN_WEAPON_LIST")
 util.AddNetworkString("ST2_ADMIN_MAPS_REQUEST")
 util.AddNetworkString("ST2_ADMIN_MAPS")
 util.AddNetworkString("ST2_ADMIN_MAP_CHANGE")
+util.AddNetworkString("ST2_TS_ADMIN_CONFIG")
+util.AddNetworkString("ST2_TS_ADMIN_CONFIG_REQUEST")
+util.AddNetworkString("ST2_TS_ADMIN_RESCAN")
+util.AddNetworkString("ST2_TS_ADMIN_TOGGLE")
+util.AddNetworkString("ST2_TS_ADMIN_PRICE")
+util.AddNetworkString("ST2_TS_ADMIN_ADD")
 util.AddNetworkString("ST2_PS_EQUIP")
 util.AddNetworkString("ST2_PS_MODELS_REQUEST")
 util.AddNetworkString("ST2_PS_MODELS")
@@ -1399,6 +1631,98 @@ net.Receive("ST2_ADMIN_MAPS_REQUEST", function(_, ply)
   sendAdminMapList(ply)
 end)
 
+local function sendTraitorShopConfig(ply)
+  if not IsAdmin(ply) then return end
+  applyTraitorShopOverrides()
+  local entries = collectTraitorShopEntries()
+
+  net.Start("ST2_TS_ADMIN_CONFIG")
+  net.WriteUInt(#entries, 12)
+  for _, entry in ipairs(entries) do
+    net.WriteString(entry.id or "")
+    net.WriteString(entry.name or "")
+    net.WriteUInt(math.max(0, math.floor(tonumber(entry.price) or 0)), 12)
+    net.WriteBool(entry.enabled and true or false)
+    net.WriteString(entry.category or "")
+    net.WriteString(entry.author or "")
+  end
+  net.Send(ply)
+end
+
+net.Receive("ST2_TS_ADMIN_CONFIG_REQUEST", function(_, ply)
+  if not IsAdmin(ply) then return end
+  sendTraitorShopConfig(ply)
+end)
+
+net.Receive("ST2_TS_ADMIN_RESCAN", function(_, ply)
+  if not IsAdmin(ply) then return end
+  sendTraitorShopConfig(ply)
+end)
+
+net.Receive("ST2_TS_ADMIN_TOGGLE", function(_, ply)
+  if not IsAdmin(ply) then return end
+  local id = string.Trim(net.ReadString() or "")
+  if id == "" then return end
+
+  ShadowTTT2.TraitorShopData = ShadowTTT2.TraitorShopData or {enabled = {}, prices = {}, added = {}}
+  local data = ShadowTTT2.TraitorShopData
+  local defaults = getTraitorShopDefaults()
+  local item = getShopItemById(id)
+  if item and not defaults[id] then
+    defaults[id] = {
+      canBuy = copySimpleTable(item.CanBuy),
+      price = getShopItemPrice(item, nil)
+    }
+  end
+  local originalAllowed = canRoleBuy(defaults[id] and defaults[id].canBuy or nil, ROLE_TRAITOR)
+
+  local current = data.enabled[id]
+  if current == nil then
+    data.enabled[id] = not originalAllowed
+  else
+    data.enabled[id] = not current
+  end
+
+  if not originalAllowed then
+    data.added[id] = true
+  end
+
+  saveTraitorShopData()
+  sendTraitorShopConfig(ply)
+end)
+
+net.Receive("ST2_TS_ADMIN_PRICE", function(_, ply)
+  if not IsAdmin(ply) then return end
+  local id = string.Trim(net.ReadString() or "")
+  local useDefault = net.ReadBool()
+  local price = net.ReadUInt(16)
+  if id == "" then return end
+
+  ShadowTTT2.TraitorShopData = ShadowTTT2.TraitorShopData or {enabled = {}, prices = {}, added = {}}
+  local data = ShadowTTT2.TraitorShopData
+  if useDefault then
+    data.prices[id] = nil
+  else
+    data.prices[id] = math.max(0, math.floor(tonumber(price) or 0))
+  end
+
+  saveTraitorShopData()
+  sendTraitorShopConfig(ply)
+end)
+
+net.Receive("ST2_TS_ADMIN_ADD", function(_, ply)
+  if not IsAdmin(ply) then return end
+  local id = string.Trim(net.ReadString() or "")
+  if id == "" then return end
+
+  ShadowTTT2.TraitorShopData = ShadowTTT2.TraitorShopData or {enabled = {}, prices = {}, added = {}}
+  local data = ShadowTTT2.TraitorShopData
+  data.added[id] = true
+  data.enabled[id] = true
+  saveTraitorShopData()
+  sendTraitorShopConfig(ply)
+end)
+
 local function sendPointsBalance(ply)
   if not IsValid(ply) then return end
   ensureStarterPoints(ply)
@@ -1792,8 +2116,10 @@ end)
 -- Bootstrap caches on load so model data exists before the first request
 loadAnalytics()
 loadBanData()
+loadTraitorShopData()
 loadPoints()
 getModelData()
+applyTraitorShopOverrides()
 applyMoveSpeeds()
 
 timer.Create("ST2_POINTS_TICK", POINTS_TICK_INTERVAL, 0, function()
