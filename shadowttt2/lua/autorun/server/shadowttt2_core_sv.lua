@@ -417,7 +417,6 @@ local function collectTraitorShopEntries()
 
     local originalAllowed = canRoleBuy(defaults[id].canBuy, roleId)
     local currentAllowed = canRoleBuy(item.CanBuy, roleId)
-    if not originalAllowed and not currentAllowed and not data.added[id] and data.enabled[id] == nil then continue end
 
     local name, category, author = getShopItemDisplay(item, id)
     local price = data.prices[id]
