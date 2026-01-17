@@ -838,6 +838,12 @@ do -- Admin panel helpers
     end
   end)
 
+  net.Receive("ST2_TS_SHOP_REFRESH", function()
+    if not (ShadowTTT2 and ShadowTTT2.TraitorShop and ShadowTTT2.TraitorShop.RequestSnapshot) then return end
+    if ShadowTTT2.TraitorShop.CanAccess and not ShadowTTT2.TraitorShop.CanAccess() then return end
+    ShadowTTT2.TraitorShop.RequestSnapshot()
+  end)
+
   net.Receive("ST2_PS_ADMIN_CONFIG", function()
     local ui = ShadowTTT2.AdminUI
     if not ui then return end
