@@ -400,6 +400,14 @@ local function syncAdminConfig(ply)
   net.Send(ply)
 end
 
+local function syncAllAdmins()
+  for _, ply in ipairs(player.GetAll()) do
+    if isAdmin(ply) then
+      syncAdminConfig(ply)
+    end
+  end
+end
+
 resyncAllTraitors = function()
   for _, ply in ipairs(player.GetAll()) do
     if canAccessShop(ply) then
@@ -472,7 +480,7 @@ net.Receive("ST2_TS_ADMIN_TOGGLE", function(_, ply)
   ShopConfig.enabled[id] = not current
   saveShopConfig()
   rebuildCatalogue()
-  syncAdminConfig(ply)
+  syncAllAdmins()
   resyncAllTraitors()
 end)
 
@@ -489,20 +497,20 @@ net.Receive("ST2_TS_ADMIN_PRICE", function(_, ply)
     ShopConfig.prices[id] = nil
     saveShopConfig()
     rebuildCatalogue()
-    syncAdminConfig(ply)
+    syncAllAdmins()
     resyncAllTraitors()
     return
   end
 
   updatePrice(id, math.Clamp(price, 0, 1000))
-  syncAdminConfig(ply)
+  syncAllAdmins()
 end)
 
 -- Admin rescans workshop weapons
 net.Receive("ST2_TS_ADMIN_RESCAN", function(_, ply)
   if not isAdmin(ply) then return end
   rebuildCatalogue()
-  syncAdminConfig(ply)
+  syncAllAdmins()
   resyncAllTraitors()
 end)
 
@@ -530,7 +538,7 @@ net.Receive("ST2_TS_ADMIN_ADD", function(_, ply)
 
   saveShopConfig()
   rebuildCatalogue()
-  syncAdminConfig(ply)
+  syncAllAdmins()
   resyncAllTraitors()
 end)
 
