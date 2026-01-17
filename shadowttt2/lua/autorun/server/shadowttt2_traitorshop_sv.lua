@@ -252,6 +252,9 @@ end
 local function sendSnapshot(ply)
   if not traitorShopEnabled() then return end
   if not IsValid(ply) then return end
+  if table.Count(Catalogue) == 0 then
+    rebuildCatalogue()
+  end
 
   net.Start("ST2_TS_SYNC")
     net.WriteTable({
