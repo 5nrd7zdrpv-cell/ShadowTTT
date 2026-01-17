@@ -137,33 +137,42 @@ local function buildItemData(id, wep, fallbackCategory)
   }
 end
 
+local function hasTraitorRole(roleList)
+  if not istable(roleList) then return false end
+  for _, role in ipairs(roleList) do
+    if role == TRAITOR_ROLE then
+      return true
+    end
+  end
+  return false
+end
+
+local function resolveWeaponId(item)
+  return item.Weapon or item.weapon or item.ClassName or item.Classname or item.Class or item.id or item.ID
+end
+
+local function addCatalogueEntry(entries, seen, entry)
+  if not entry or not entry.id or entry.id == "" then return end
+  if seen[entry.id] then return end
+  seen[entry.id] = true
+  table.insert(entries, entry)
+end
+
 local function buildTraitorItemsFromWorkshop()
   local entries = {}
   local seen = {}
   for _, wep in ipairs(weapons.GetList()) do
-    if not istable(wep.CanBuy) then continue end
-
-    local buyable = false
-    for _, role in ipairs(wep.CanBuy) do
-      if role == TRAITOR_ROLE then
-        buyable = true
-        break
-      end
-    end
-
-    if not buyable then continue end
+    if not hasTraitorRole(wep.CanBuy) then continue end
 
     local id = wep.ClassName or wep.Classname or wep.PrintName
     if not id then continue end
-    if seen[id] then continue end
-    seen[id] = true
 
     local menu = wep.EquipMenuData or {}
     local name = menu.name or wep.PrintName or id
     local desc = menu.desc or menu.description or wep.Instructions or ""
     local category = string.lower(menu.type or "workshop")
 
-    table.insert(entries, {
+    addCatalogueEntry(entries, seen, {
       id = id,
       name = name,
       desc = desc,
@@ -173,6 +182,33 @@ local function buildTraitorItemsFromWorkshop()
       category = category,
       author = wep.Author or wep.author
     })
+  end
+
+  if items and isfunction(items.GetList) then
+    for _, item in pairs(items.GetList()) do
+      if not istable(item) then continue end
+      if not hasTraitorRole(item.CanBuy or item.can_buy or item.roles) then continue end
+
+      local weaponId = resolveWeaponId(item)
+      if not weaponId or weaponId == "" then continue end
+      if not weapons.GetStored(weaponId) and not weapons.Get(weaponId) then continue end
+
+      local menu = item.EquipMenuData or {}
+      local name = item.name or item.PrintName or menu.name or weaponId
+      local desc = item.desc or item.description or menu.desc or ""
+      local category = string.lower(menu.type or item.category or "workshop")
+
+      addCatalogueEntry(entries, seen, {
+        id = weaponId,
+        name = name,
+        desc = desc,
+        weapon = weaponId,
+        price = getItemPrice(weaponId, item),
+        icon = menu.icon or item.icon or item.material,
+        category = category,
+        author = item.Author or item.author
+      })
+    end
   end
 
   table.sort(entries, function(a, b) return string.lower(a.name) < string.lower(b.name) end)
