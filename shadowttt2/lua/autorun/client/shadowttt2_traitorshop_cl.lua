@@ -184,6 +184,15 @@ local function buildItemCard(layout, catId, item)
   badge:SizeToContents()
 
   local function refresh()
+    if not snapshot.canUse then
+      btn:SetText("Nicht verfügbar")
+      btn:SetEnabled(false)
+      badge:SetText("Nur für Traitor verfügbar")
+      badge:SetTextColor(THEME.warning)
+      badge:SizeToContents()
+      return
+    end
+
     local owned = snapshot.owned and snapshot.owned[item.id]
     if owned then
       btn:SetText("Bereits gekauft")
@@ -273,6 +282,16 @@ local function buildWorkshopCard(layout, blueprint)
   local function refresh()
     local project = snapshot.project
     progress:SetVisible(project and project.id == blueprint.id)
+
+    if not snapshot.canUse then
+      btn:SetText("Nicht verfügbar")
+      btn:SetEnabled(false)
+      btn.DoClick = nil
+      badge:SetText("Nur für Traitor verfügbar")
+      badge:SetTextColor(THEME.warning)
+      badge:SizeToContents()
+      return
+    end
 
     if project and project.id ~= blueprint.id then
       btn:SetText("Werkstatt belegt")
@@ -554,14 +573,12 @@ local function buildTraitorShopPanel(parent)
   local function refresh()
     if not IsValid(container) then return false end
     local enabled = traitorShopEnabled()
-    local canAccess = enabled and (snapshot.canUse or isActiveTraitor(LocalPlayer()))
+    local canAccess = enabled
     if IsValid(content) then content:SetVisible(canAccess) end
     if IsValid(state) then
       state:SetVisible(not canAccess)
       if not enabled then
         state:SetText("Der Traitor Shop ist serverseitig deaktiviert.")
-      else
-        state:SetText("Der Traitor Shop ist nur für aktive Traitor verfügbar.")
       end
     end
     if canAccess then
