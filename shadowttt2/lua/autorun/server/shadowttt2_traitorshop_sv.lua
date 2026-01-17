@@ -230,7 +230,23 @@ local function resetAllPlayers()
 end
 
 local function canAccessShop(ply)
+  return traitorShopEnabled() and IsValid(ply)
+end
+
+local function canSpendShopCredits(ply)
   return traitorShopEnabled() and isActiveTraitor(ply)
+end
+
+local function getShopCredits(ply)
+  if not canSpendShopCredits(ply) then
+    return 0
+  end
+
+  if ply.GetCredits then
+    return ply:GetCredits()
+  end
+
+  return 0
 end
 
 local function sendSnapshot(ply)
@@ -241,7 +257,7 @@ local function sendSnapshot(ply)
     net.WriteTable({
       owned = Owned[ply] or {},
       project = Projects[ply],
-      credits = ply:GetCredits(),
+      credits = getShopCredits(ply),
       catalogue = Catalogue,
       blueprints = BLUEPRINTS
     })
@@ -290,6 +306,7 @@ net.Receive("ST2_TS_BUY", function(_, ply)
 
   Owned[ply] = Owned[ply] or {}
   if Owned[ply][id] then return end
+  if not canSpendShopCredits(ply) then return end
   if ply:GetCredits() < item.price then return end
 
   ply:SetCredits(ply:GetCredits() - item.price)
@@ -347,6 +364,7 @@ net.Receive("ST2_TS_WORKSHOP", function(_, ply)
 
   if action == "start" then
     if not bp or Projects[ply] then return end
+    if not canSpendShopCredits(ply) then return end
     Owned[ply] = Owned[ply] or {}
     if bp.requiresOwned and not Owned[ply][bp.requiresOwned] then return end
     if ply:GetCredits() < bp.price then return end
@@ -366,6 +384,7 @@ net.Receive("ST2_TS_WORKSHOP", function(_, ply)
     local project = Projects[ply]
     if not project or not bp or project.id ~= bp.id then return end
     if project.readyAt and CurTime() < project.readyAt then return end
+    if not canSpendShopCredits(ply) then return end
 
     if bp.rewardWeapon then
       ply:Give(bp.rewardWeapon)
