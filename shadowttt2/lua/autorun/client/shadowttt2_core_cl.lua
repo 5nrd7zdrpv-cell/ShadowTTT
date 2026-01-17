@@ -1544,18 +1544,15 @@ do -- Admin panel helpers
     shopAddButton:SetText("Hinzufügen")
     styleButton(shopAddButton)
     shopAddButton.DoClick = function()
-      local ui = ShadowTTT2.AdminUI
-      populateWeaponDropdown(shopWeaponDropdown, ui and ui.weaponList or {}, IsValid(shopWeaponSearch) and shopWeaponSearch:GetText() or "", shopWeaponDropdown.SelectedClass)
-
       local id = string.Trim(shopAddEntry:GetText() or "")
-      if id == "" and shopWeaponDropdown and shopWeaponDropdown.GetValue then
-        local selected = string.Trim(shopWeaponDropdown:GetValue() or "")
-        if selected ~= "" and selected ~= "Keine Waffen gefunden" and not string.find(selected, "Waffe auswählen", 1, true) then
-          id = selected
-        end
-      end
       if id == "" and shopWeaponDropdown then
         id = shopWeaponDropdown.SelectedClass or ""
+        if id == "" and shopWeaponDropdown.GetSelected then
+          local selected = shopWeaponDropdown:GetSelected()
+          if IsValid(selected) and selected.Data then
+            id = selected.Data
+          end
+        end
       end
       if id == "" then return end
       sendTraitorShopAdd(id)
