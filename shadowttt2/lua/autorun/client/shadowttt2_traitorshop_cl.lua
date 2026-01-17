@@ -23,6 +23,7 @@ local snapshot = {
 local refreshUI
 local activeFrame
 local externalRefreshers = {}
+local lastToggleStamp = 0
 
 local function isActiveTraitor(ply)
   if not IsValid(ply) then return false end
@@ -643,8 +644,17 @@ net.Receive("ST2_TS_SYNC", function()
   runExternalRefreshers()
 end)
 
-local function openTraitorShop()
+local function toggleTraitorShop()
   if not traitorShopEnabled() then return end
+
+  local now = SysTime()
+  if now - lastToggleStamp < 0.05 then return end
+  lastToggleStamp = now
+
+  if IsValid(activeFrame) then
+    activeFrame:Remove()
+    return
+  end
 
   requestSnapshot()
   buildFrame()
@@ -666,21 +676,21 @@ hook.Add("PlayerButtonDown", "ST2_TS_PHASE3_FIX", function(ply, key)
   if ply ~= LocalPlayer() then return end
   if key ~= KEY_C then return end
 
-  openTraitorShop()
+  toggleTraitorShop()
 end)
 
 hook.Add("PlayerButtonDown", "ST2_TS_OPEN_V", function(ply, key)
   if ply ~= LocalPlayer() then return end
   if key ~= KEY_V then return end
 
-  openTraitorShop()
+  toggleTraitorShop()
 end)
 
 hook.Add("PlayerBindPress", "ST2_TS_CONTEXT_BIND", function(ply, bind, pressed)
   if ply ~= LocalPlayer() or not pressed then return end
   if not bind or not string.find(string.lower(bind), "menu_context", 1, true) then return end
 
-  openTraitorShop()
+  toggleTraitorShop()
   return true
 end)
 
