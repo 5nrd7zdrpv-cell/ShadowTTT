@@ -40,15 +40,27 @@ local ShopConfig = {
   custom = {}
 }
 
-local TRAITOR_ROLE = ROLE_TRAITOR or 2
+local function getTraitorRoleId()
+  if ROLE_TRAITOR then
+    return ROLE_TRAITOR
+  end
+
+  if roles and roles.GetByName then
+    local traitorRole = roles.GetByName("traitor")
+    if traitorRole and traitorRole.index then
+      return traitorRole.index
+    end
+  end
+end
 
 local function isActiveTraitor(ply)
   if not IsValid(ply) then return false end
+  local roleId = getTraitorRoleId()
   if ply.IsActiveTraitor and ply:IsActiveTraitor() then return true end
   if ply.IsTraitor and ply:IsTraitor() then return true end
-  if ply.GetSubRole and ROLE_TRAITOR and ply:GetSubRole() == ROLE_TRAITOR then return true end
-  if ply.GetRole and ROLE_TRAITOR and ply:GetRole() == ROLE_TRAITOR then return true end
-  if ply.GetBaseRole and ROLE_TRAITOR and ply:GetBaseRole() == ROLE_TRAITOR then return true end
+  if ply.GetSubRole and roleId and ply:GetSubRole() == roleId then return true end
+  if ply.GetRole and roleId and ply:GetRole() == roleId then return true end
+  if ply.GetBaseRole and roleId and ply:GetBaseRole() == roleId then return true end
   if ply.GetTeam and TEAM_TRAITOR and ply:GetTeam() == TEAM_TRAITOR then return true end
   return false
 end
@@ -142,11 +154,15 @@ end
 
 local function hasTraitorRole(roleList)
   if roleList == nil then return false end
-  if isnumber(roleList) then return roleList == TRAITOR_ROLE end
+  local roleId = getTraitorRoleId()
+  if isnumber(roleList) then return roleId ~= nil and roleList == roleId end
+  if isstring(roleList) then return string.lower(roleList) == "traitor" end
   if not istable(roleList) then return false end
-  if roleList[TRAITOR_ROLE] then return true end
+  if roleId and roleList[roleId] then return true end
+  if roleList.traitor or roleList.TRAITOR then return true end
   for _, role in pairs(roleList) do
-    if role == TRAITOR_ROLE then return true end
+    if roleId and role == roleId then return true end
+    if isstring(role) and string.lower(role) == "traitor" then return true end
   end
   return false
 end
