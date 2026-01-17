@@ -1158,7 +1158,21 @@ end)
 
 hook.Add("TTTGameOver", "ST2_MAPVOTE_GAME_OVER", function()
   if not mapVoteEnabledConVar:GetBool() then return end
-  timer.Simple(2, function()
+  timer.Create("ST2_MapVote_Start", 2, 1, function()
+    startMapVote()
+  end)
+end)
+
+hook.Add("TTTEndRound", "ST2_MAPVOTE_END_ROUND", function()
+  if not mapVoteEnabledConVar:GetBool() then return end
+  timer.Create("ST2_MapVote_Start", 2, 1, function()
+    startMapVote()
+  end)
+end)
+
+hook.Add("TTT2PostRound", "ST2_MAPVOTE_POST_ROUND", function()
+  if not mapVoteEnabledConVar:GetBool() then return end
+  timer.Create("ST2_MapVote_Start", 2, 1, function()
     startMapVote()
   end)
 end)
