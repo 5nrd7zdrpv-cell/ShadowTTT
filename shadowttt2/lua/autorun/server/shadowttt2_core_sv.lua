@@ -1662,7 +1662,7 @@ local function sendTraitorShopConfig(ply)
   for _, entry in ipairs(entries) do
     net.WriteString(entry.id or "")
     net.WriteString(entry.name or "")
-    net.WriteUInt(math.max(0, math.floor(tonumber(entry.price) or 0)), 12)
+    net.WriteUInt(math.max(0, math.floor(tonumber(entry.price) or 0)), 16)
     net.WriteBool(entry.enabled and true or false)
     net.WriteString(entry.category or "")
     net.WriteString(entry.author or "")

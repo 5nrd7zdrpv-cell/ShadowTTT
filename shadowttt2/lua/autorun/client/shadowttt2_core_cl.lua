@@ -822,7 +822,7 @@ do -- Admin panel helpers
       table.insert(entries, {
         id = net.ReadString(),
         name = net.ReadString(),
-        price = net.ReadUInt(12),
+        price = net.ReadUInt(16),
         enabled = net.ReadBool(),
         category = net.ReadString(),
         author = net.ReadString(),
