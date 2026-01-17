@@ -17,7 +17,8 @@ local snapshot = {
   catalogue = {},
   blueprints = {},
   project = nil,
-  credits = 0
+  credits = 0,
+  canUse = false
 }
 
 local refreshUI
@@ -553,7 +554,7 @@ local function buildTraitorShopPanel(parent)
   local function refresh()
     if not IsValid(container) then return false end
     local enabled = traitorShopEnabled()
-    local canAccess = enabled and isActiveTraitor(LocalPlayer())
+    local canAccess = enabled and (snapshot.canUse or isActiveTraitor(LocalPlayer()))
     if IsValid(content) then content:SetVisible(canAccess) end
     if IsValid(state) then
       state:SetVisible(not canAccess)
@@ -640,6 +641,7 @@ net.Receive("ST2_TS_SYNC", function()
   snapshot.blueprints = data.blueprints or snapshot.blueprints or {}
   snapshot.project = data.project
   snapshot.credits = data.credits or LocalPlayer():GetCredits()
+  snapshot.canUse = data.canUse or false
 
   if isfunction(refreshUI) then
     refreshUI()

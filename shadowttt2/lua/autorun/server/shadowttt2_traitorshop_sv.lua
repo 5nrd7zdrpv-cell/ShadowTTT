@@ -301,6 +301,7 @@ local function sendSnapshot(ply)
       owned = Owned[ply] or {},
       project = Projects[ply],
       credits = getShopCredits(ply),
+      canUse = canSpendShopCredits(ply),
       catalogue = Catalogue,
       blueprints = BLUEPRINTS
     })
