@@ -64,7 +64,7 @@ end
 
 local function canAccessTraitorShop()
   local ply = LocalPlayer()
-  return traitorShopEnabled() and IsValid(ply)
+  return traitorShopEnabled() and IsValid(ply) and isActiveTraitor(ply)
 end
 
 local function formatTime(rem)
@@ -586,12 +586,14 @@ local function buildTraitorShopPanel(parent)
   local function refresh()
     if not IsValid(container) then return false end
     local enabled = traitorShopEnabled()
-    local canAccess = enabled
+    local canAccess = enabled and canAccessTraitorShop()
     if IsValid(content) then content:SetVisible(canAccess) end
     if IsValid(state) then
       state:SetVisible(not canAccess)
       if not enabled then
         state:SetText("Der Traitor Shop ist serverseitig deaktiviert.")
+      else
+        state:SetText("Nur Traitor dürfen den Shop benutzen.")
       end
     end
     if canAccess then
@@ -680,7 +682,7 @@ net.Receive("ST2_TS_SYNC", function()
 end)
 
 local function toggleTraitorShop()
-  if not traitorShopEnabled() then return end
+  if not canAccessTraitorShop() then return end
 
   local now = SysTime()
   if now - lastToggleStamp < 0.05 then return end
@@ -724,6 +726,7 @@ end)
 hook.Add("PlayerBindPress", "ST2_TS_CONTEXT_BIND", function(ply, bind, pressed)
   if ply ~= LocalPlayer() or not pressed then return end
   if not bind or not string.find(string.lower(bind), "menu_context", 1, true) then return end
+  if not canAccessTraitorShop() then return end
 
   toggleTraitorShop()
   return true
