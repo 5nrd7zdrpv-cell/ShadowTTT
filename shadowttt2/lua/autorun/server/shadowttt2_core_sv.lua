@@ -245,7 +245,7 @@ local function copySimpleTable(tbl)
 end
 
 local function canRoleBuy(canBuy, roleId)
-  if not istable(canBuy) then return false end
+  if not istable(canBuy) or not roleId then return false end
   for _, role in ipairs(canBuy) do
     if role == roleId then return true end
   end
@@ -253,6 +253,7 @@ local function canRoleBuy(canBuy, roleId)
 end
 
 local function setRoleInCanBuy(canBuy, roleId, enabled)
+  if not roleId then return istable(canBuy) and copySimpleTable(canBuy) or nil end
   local list = istable(canBuy) and copySimpleTable(canBuy) or {}
   local has = false
   for i = #list, 1, -1 do
@@ -356,6 +357,8 @@ local function applyTraitorShopOverrides()
   ShadowTTT2.TraitorShopData = ShadowTTT2.TraitorShopData or {enabled = {}, prices = {}, added = {}}
   local data = ShadowTTT2.TraitorShopData
   local defaults = getTraitorShopDefaults()
+  local roleId = ROLE_TRAITOR
+  if not roleId then return end
 
   for _, item in ipairs(collectShopSources()) do
     local id = getShopItemId(item)
@@ -369,14 +372,20 @@ local function applyTraitorShopOverrides()
     end
 
     local originalCanBuy = defaults[id].canBuy
-    local originalAllowed = canRoleBuy(originalCanBuy, ROLE_TRAITOR)
+    local originalAllowed = canRoleBuy(originalCanBuy, roleId)
+    local currentAllowed = canRoleBuy(item.CanBuy, roleId)
+    if currentAllowed and not originalAllowed and data.enabled[id] == nil and not data.added[id] then
+      defaults[id].canBuy = copySimpleTable(item.CanBuy)
+      originalCanBuy = defaults[id].canBuy
+      originalAllowed = true
+    end
     local enabledOverride = data.enabled[id]
     local shouldEnable = enabledOverride
     if shouldEnable == nil then
       shouldEnable = data.added[id] or originalAllowed
     end
 
-    local updatedCanBuy = setRoleInCanBuy(originalCanBuy, ROLE_TRAITOR, shouldEnable)
+    local updatedCanBuy = setRoleInCanBuy(originalCanBuy, roleId, shouldEnable)
     item.CanBuy = updatedCanBuy
 
     if data.prices[id] ~= nil then
@@ -392,6 +401,8 @@ local function collectTraitorShopEntries()
   local data = ShadowTTT2.TraitorShopData
   local defaults = getTraitorShopDefaults()
   local entries = {}
+  local roleId = ROLE_TRAITOR
+  if not roleId then return entries end
 
   for _, item in ipairs(collectShopSources()) do
     local id = getShopItemId(item)
@@ -404,8 +415,9 @@ local function collectTraitorShopEntries()
       }
     end
 
-    local originalAllowed = canRoleBuy(defaults[id].canBuy, ROLE_TRAITOR)
-    if not originalAllowed and not data.added[id] and data.enabled[id] == nil then continue end
+    local originalAllowed = canRoleBuy(defaults[id].canBuy, roleId)
+    local currentAllowed = canRoleBuy(item.CanBuy, roleId)
+    if not originalAllowed and not currentAllowed and not data.added[id] and data.enabled[id] == nil then continue end
 
     local name, category, author = getShopItemDisplay(item, id)
     local price = data.prices[id]
@@ -414,7 +426,7 @@ local function collectTraitorShopEntries()
     end
     local enabled = data.enabled[id]
     if enabled == nil then
-      enabled = originalAllowed or data.added[id]
+      enabled = currentAllowed or originalAllowed or data.added[id]
     end
 
     entries[#entries + 1] = {
