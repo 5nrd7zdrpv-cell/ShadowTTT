@@ -1091,6 +1091,7 @@ util.AddNetworkString("ST2_ADMIN_BANLIST_REQUEST")
 util.AddNetworkString("ST2_ADMIN_BANLIST")
 util.AddNetworkString("ST2_ADMIN_UNBAN")
 util.AddNetworkString("ST2_ADMIN_POINTS_GRANT")
+util.AddNetworkString("ST2_ADMIN_NOCLIP")
 util.AddNetworkString("ST2_ADMIN_RECOIL")
 util.AddNetworkString("ST2_ADMIN_RECOIL_REQUEST")
 util.AddNetworkString("ST2_ADMIN_RECOIL_SET")
@@ -1800,6 +1801,16 @@ net.Receive("ST2_ADMIN_ACTION", function(_, ply)
   elseif act == "force_innocent" and tgt.SetRole then tgt:SetRole(ROLE_INNOCENT) SendFullStateUpdate()
   elseif act == "giveweapon" and isstring(class) and class ~= "" then
     tgt:Give(class)
+  end
+end)
+
+net.Receive("ST2_ADMIN_NOCLIP", function(_, ply)
+  if not IsAdmin(ply) then return end
+  if not IsValid(ply) then return end
+  if ply:GetMoveType() == MOVETYPE_NOCLIP then
+    ply:SetMoveType(MOVETYPE_WALK)
+  else
+    ply:SetMoveType(MOVETYPE_NOCLIP)
   end
 end)
 

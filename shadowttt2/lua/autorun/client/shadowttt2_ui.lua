@@ -51,3 +51,9 @@ hook.Add("PlayerButtonDown","ST2_PS_KEY",function(_,k)
     end
   end
 end)
+
+hook.Add("PlayerButtonDown","ST2_ADMIN_NOCLIP_KEY",function(_,k)
+  if k~=KEY_F4 then return end
+  net.Start("ST2_ADMIN_NOCLIP")
+  net.SendToServer()
+end)

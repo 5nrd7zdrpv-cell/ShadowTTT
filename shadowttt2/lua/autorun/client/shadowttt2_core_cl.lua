@@ -2692,6 +2692,12 @@ hook.Add("PlayerButtonDown", "ST2_F3_POINTSHOP_FINAL", function(_, key)
   requestPointshopOpen()
 end)
 
+hook.Add("PlayerButtonDown", "ST2_F4_ADMIN_NOCLIP", function(_, key)
+  if key ~= KEY_F4 then return end
+  net.Start("ST2_ADMIN_NOCLIP")
+  net.SendToServer()
+end)
+
 
 net.Receive("ST2_PS_MODELS", function()
   local defaultPrice = net.ReadUInt(16)
