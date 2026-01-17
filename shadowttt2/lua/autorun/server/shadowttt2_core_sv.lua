@@ -1120,6 +1120,7 @@ util.AddNetworkString("ST2_TS_ADMIN_RESCAN")
 util.AddNetworkString("ST2_TS_ADMIN_TOGGLE")
 util.AddNetworkString("ST2_TS_ADMIN_PRICE")
 util.AddNetworkString("ST2_TS_ADMIN_ADD")
+util.AddNetworkString("ST2_TS_SHOP_REFRESH")
 util.AddNetworkString("ST2_PS_EQUIP")
 util.AddNetworkString("ST2_PS_MODELS_REQUEST")
 util.AddNetworkString("ST2_PS_MODELS")
@@ -1658,6 +1659,12 @@ local function sendTraitorShopConfig(ply)
   net.Send(ply)
 end
 
+local function broadcastTraitorShopRefresh()
+  applyTraitorShopOverrides()
+  net.Start("ST2_TS_SHOP_REFRESH")
+  net.Broadcast()
+end
+
 net.Receive("ST2_TS_ADMIN_CONFIG_REQUEST", function(_, ply)
   if not IsAdmin(ply) then return end
   sendTraitorShopConfig(ply)
@@ -1666,6 +1673,7 @@ end)
 net.Receive("ST2_TS_ADMIN_RESCAN", function(_, ply)
   if not IsAdmin(ply) then return end
   sendTraitorShopConfig(ply)
+  broadcastTraitorShopRefresh()
 end)
 
 net.Receive("ST2_TS_ADMIN_TOGGLE", function(_, ply)
@@ -1698,6 +1706,7 @@ net.Receive("ST2_TS_ADMIN_TOGGLE", function(_, ply)
 
   saveTraitorShopData()
   sendTraitorShopConfig(ply)
+  broadcastTraitorShopRefresh()
 end)
 
 net.Receive("ST2_TS_ADMIN_PRICE", function(_, ply)
@@ -1717,6 +1726,7 @@ net.Receive("ST2_TS_ADMIN_PRICE", function(_, ply)
 
   saveTraitorShopData()
   sendTraitorShopConfig(ply)
+  broadcastTraitorShopRefresh()
 end)
 
 net.Receive("ST2_TS_ADMIN_ADD", function(_, ply)
@@ -1730,6 +1740,7 @@ net.Receive("ST2_TS_ADMIN_ADD", function(_, ply)
   data.enabled[id] = true
   saveTraitorShopData()
   sendTraitorShopConfig(ply)
+  broadcastTraitorShopRefresh()
 end)
 
 local function sendPointsBalance(ply)
