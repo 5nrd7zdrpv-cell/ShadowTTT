@@ -450,6 +450,55 @@ local function collectTraitorShopEntries()
   return entries
 end
 
+local function buildTraitorShopClientOverrides()
+  ShadowTTT2.TraitorShopData = ShadowTTT2.TraitorShopData or {enabled = {}, prices = {}, added = {}}
+  local data = ShadowTTT2.TraitorShopData
+  local entries = {}
+  local seen = {}
+  local function addId(id)
+    if not isstring(id) or id == "" or seen[id] then return end
+    seen[id] = true
+    local enabled = data.enabled[id]
+    if enabled == nil and data.added[id] then
+      enabled = true
+    end
+    entries[#entries + 1] = {
+      id = id,
+      enabled = enabled,
+      price = data.prices[id]
+    }
+  end
+
+  for id in pairs(data.enabled or {}) do
+    addId(id)
+  end
+  for id in pairs(data.prices or {}) do
+    addId(id)
+  end
+  for id in pairs(data.added or {}) do
+    addId(id)
+  end
+
+  return entries
+end
+
+local function sendTraitorShopOverrides(targets)
+  if not targets then return end
+  local entries = buildTraitorShopClientOverrides()
+  net.Start("ST2_TS_CLIENT_OVERRIDES")
+  net.WriteUInt(#entries, 12)
+  for _, entry in ipairs(entries) do
+    net.WriteString(entry.id or "")
+    local hasEnabled = entry.enabled ~= nil
+    net.WriteBool(hasEnabled)
+    net.WriteBool(hasEnabled and entry.enabled or false)
+    local hasPrice = entry.price ~= nil
+    net.WriteBool(hasPrice)
+    net.WriteUInt(math.max(0, math.floor(tonumber(entry.price) or 0)), 16)
+  end
+  net.Send(targets)
+end
+
 local function loadAnalytics()
   ensureDataDir()
   local raw = file.Exists(ANALYTICS_PATH, "DATA") and file.Read(ANALYTICS_PATH, "DATA")
@@ -1132,6 +1181,7 @@ util.AddNetworkString("ST2_TS_ADMIN_TOGGLE")
 util.AddNetworkString("ST2_TS_ADMIN_PRICE")
 util.AddNetworkString("ST2_TS_ADMIN_ADD")
 util.AddNetworkString("ST2_TS_SHOP_REFRESH")
+util.AddNetworkString("ST2_TS_CLIENT_OVERRIDES")
 util.AddNetworkString("ST2_PS_EQUIP")
 util.AddNetworkString("ST2_PS_MODELS_REQUEST")
 util.AddNetworkString("ST2_PS_MODELS")
@@ -1480,6 +1530,13 @@ hook.Add("PlayerInitialSpawn", "ST2_MapVoteStateOnJoin", function(ply)
   end)
 end)
 
+hook.Add("PlayerInitialSpawn", "ST2_TS_SEND_OVERRIDES_ON_JOIN", function(ply)
+  timer.Simple(1, function()
+    if not IsValid(ply) then return end
+    sendTraitorShopOverrides(ply)
+  end)
+end)
+
 local function applyStoredModel(ply)
   if not IsValid(ply) then return end
   local data = getModelData()
@@ -1672,6 +1729,10 @@ end
 
 local function broadcastTraitorShopRefresh()
   applyTraitorShopOverrides()
+  local targets = player.GetAll()
+  if #targets > 0 then
+    sendTraitorShopOverrides(targets)
+  end
   net.Start("ST2_TS_SHOP_REFRESH")
   net.Broadcast()
 end
