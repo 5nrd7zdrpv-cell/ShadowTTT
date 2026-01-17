@@ -6,7 +6,10 @@ ShadowTTT2.TraitorShop = ShadowTTT2.TraitorShop or {}
 
 local function traitorShopEnabled()
   local cvar = GetConVar("shadowttt2_traitorshop_enabled")
-  return cvar and cvar:GetBool()
+  if not cvar then
+    return true
+  end
+  return cvar:GetBool()
 end
 
 local snapshot = {
