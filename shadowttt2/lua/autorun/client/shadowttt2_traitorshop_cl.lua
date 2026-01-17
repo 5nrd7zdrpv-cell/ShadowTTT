@@ -59,7 +59,7 @@ end
 
 local function canAccessTraitorShop()
   local ply = LocalPlayer()
-  return traitorShopEnabled() and isActiveTraitor(ply)
+  return traitorShopEnabled() and IsValid(ply)
 end
 
 local function formatTime(rem)
@@ -645,8 +645,6 @@ end)
 
 local function openTraitorShop()
   if not traitorShopEnabled() then return end
-  local ply = LocalPlayer()
-  if not isActiveTraitor(ply) then return end
 
   requestSnapshot()
   buildFrame()
