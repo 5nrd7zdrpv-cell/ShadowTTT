@@ -270,7 +270,7 @@ local function resetAllPlayers()
 end
 
 local function canAccessShop(ply)
-  return traitorShopEnabled() and IsValid(ply)
+  return traitorShopEnabled() and isActiveTraitor(ply)
 end
 
 local function canSpendShopCredits(ply)
