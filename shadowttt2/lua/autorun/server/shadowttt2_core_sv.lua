@@ -1019,6 +1019,10 @@ local function collectMaps()
 
   addMaps("maps/ttt_*.bsp")
   addMaps("maps/terrortown_*.bsp")
+  addMaps("maps/ttt2_*.bsp")
+  if #maps == 0 then
+    addMaps("maps/*.bsp")
+  end
 
   local unique = {}
   local current = string.lower(game.GetMap() or "")
