@@ -398,6 +398,20 @@ local function buildShopTab(parent)
   local activeFilter = "all"
   local lastCatalogue = nil
 
+  local function matchesSearch(item, catId, catName, query)
+    if query == "" then return true end
+    local haystack = string.lower(table.concat({
+      item.name or "",
+      item.desc or "",
+      item.id or "",
+      item.category or "",
+      catId or "",
+      catName or "",
+      item.author or ""
+    }, " "))
+    return string.find(haystack, query, 1, true) ~= nil
+  end
+
   local function rebuild()
     list:Clear()
     table.Empty(refreshers)
@@ -406,8 +420,7 @@ local function buildShopTab(parent)
       if activeFilter == "all" or activeFilter == catId then
         for _, item in ipairs(cat.items or {}) do
           local query = string.lower(search:GetText() or "")
-          local searchMatch = query == "" or string.find(string.lower(item.name .. " " .. (item.desc or "")), query, 1, true)
-          if searchMatch then
+          if matchesSearch(item, catId, cat.name, query) then
             table.insert(refreshers, buildItemCard(list, catId, item))
           end
         end
