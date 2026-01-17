@@ -812,6 +812,70 @@ do -- Admin panel helpers
     end
   end
 
+  local function copySimpleTable(tbl)
+    if not istable(tbl) then return nil end
+    local copy = {}
+    for k, v in pairs(tbl) do
+      copy[k] = v
+    end
+    return copy
+  end
+
+  local function setRoleInCanBuy(canBuy, roleId, enabled)
+    if not roleId then return istable(canBuy) and copySimpleTable(canBuy) or nil end
+    local list = istable(canBuy) and copySimpleTable(canBuy) or {}
+    local has = false
+    for i = #list, 1, -1 do
+      if list[i] == roleId then
+        if not enabled then
+          table.remove(list, i)
+        else
+          has = true
+        end
+      end
+    end
+    if enabled and not has then
+      table.insert(list, roleId)
+    end
+    if #list == 0 then
+      return nil
+    end
+    return list
+  end
+
+  local function getShopItemById(id)
+    if not isstring(id) or id == "" then return nil end
+    if items and isfunction(items.GetStored) then
+      local item = items.GetStored(id)
+      if item then return item end
+    end
+    if weapons and isfunction(weapons.GetStored) then
+      return weapons.GetStored(id)
+    end
+    return nil
+  end
+
+  net.Receive("ST2_TS_CLIENT_OVERRIDES", function()
+    local count = net.ReadUInt(12)
+    for _ = 1, count do
+      local id = net.ReadString()
+      local hasEnabled = net.ReadBool()
+      local enabled = net.ReadBool()
+      local hasPrice = net.ReadBool()
+      local price = net.ReadUInt(16)
+
+      local item = getShopItemById(id)
+      if item then
+        if hasEnabled and ROLE_TRAITOR then
+          item.CanBuy = setRoleInCanBuy(item.CanBuy, ROLE_TRAITOR, enabled)
+        end
+        if hasPrice then
+          item.credits = price
+        end
+      end
+    end
+  end)
+
   net.Receive("ST2_TS_ADMIN_CONFIG", function()
     local ui = ShadowTTT2.AdminUI
     if not ui then return end
