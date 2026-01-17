@@ -334,6 +334,7 @@ hook.Add("TTTPrepareRound", "ST2_TS_ResetRoundState", function()
 end)
 
 hook.Add("TTTBeginRound", "ST2_TS_ResyncTraitors", function()
+  rebuildCatalogue()
   resyncAllTraitors()
 end)
 
