@@ -1160,25 +1160,16 @@ concommand.Add("st2_mapvote_start", function(ply)
   startMapVote()
 end)
 
+local function queueMapVoteStart()
+  if timer.Exists("ST2_MapVote_Start") then return end
+  timer.Create("ST2_MapVote_Start", 2, 1, function()
+    startMapVote()
+  end)
+end
+
 hook.Add("TTTGameOver", "ST2_MAPVOTE_GAME_OVER", function()
   if not mapVoteEnabledConVar:GetBool() then return end
-  timer.Create("ST2_MapVote_Start", 2, 1, function()
-    startMapVote()
-  end)
-end)
-
-hook.Add("TTTEndRound", "ST2_MAPVOTE_END_ROUND", function()
-  if not mapVoteEnabledConVar:GetBool() then return end
-  timer.Create("ST2_MapVote_Start", 2, 1, function()
-    startMapVote()
-  end)
-end)
-
-hook.Add("TTT2PostRound", "ST2_MAPVOTE_POST_ROUND", function()
-  if not mapVoteEnabledConVar:GetBool() then return end
-  timer.Create("ST2_MapVote_Start", 2, 1, function()
-    startMapVote()
-  end)
+  queueMapVoteStart()
 end)
 
 local function sendAdminMapList(ply)
