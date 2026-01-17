@@ -323,14 +323,22 @@ end
 
 local function collectShopSources()
   local entries = {}
+  local seen = {}
+  local function addEntry(item)
+    local id = getShopItemId(item)
+    if not id or seen[id] then return end
+    seen[id] = true
+    entries[#entries + 1] = item
+  end
+
   if items and isfunction(items.GetList) then
     for _, item in pairs(items.GetList()) do
-      entries[#entries + 1] = item
+      addEntry(item)
     end
-  else
-    for _, wep in ipairs(weapons.GetList() or {}) do
-      entries[#entries + 1] = wep
-    end
+  end
+
+  for _, wep in ipairs(weapons.GetList() or {}) do
+    addEntry(wep)
   end
   return entries
 end
