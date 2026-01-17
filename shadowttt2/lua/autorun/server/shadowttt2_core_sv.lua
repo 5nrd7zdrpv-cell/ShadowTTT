@@ -1167,8 +1167,28 @@ local function queueMapVoteStart()
   end)
 end
 
+local function shouldStartMapVoteOnFinalRound()
+  local roundLimitConVar = GetConVar("ttt_round_limit")
+  if not roundLimitConVar then return false end
+
+  local roundLimit = roundLimitConVar:GetInt()
+  if roundLimit <= 0 then return false end
+
+  if not GetGlobalInt then return false end
+  local roundsLeft = GetGlobalInt("ttt_rounds_left", roundLimit)
+  return roundsLeft <= 0
+end
+
 hook.Add("TTTGameOver", "ST2_MAPVOTE_GAME_OVER", function()
   if not mapVoteEnabledConVar:GetBool() then return end
+  queueMapVoteStart()
+end)
+
+hook.Add("TTTEndRound", "ST2_MAPVOTE_FINAL_ROUND_FALLBACK", function()
+  if not mapVoteEnabledConVar:GetBool() then return end
+  if mapVoteState.active then return end
+  if not shouldStartMapVoteOnFinalRound() then return end
+
   queueMapVoteStart()
 end)
 
