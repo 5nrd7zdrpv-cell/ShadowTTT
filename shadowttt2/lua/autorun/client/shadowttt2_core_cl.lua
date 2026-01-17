@@ -2667,13 +2667,16 @@ local function openPointshop(models, activeModel, defaultPrice)
   end
 end
 
-local function isActiveTraitor(ply)
-  if not IsValid(ply) then return false end
-  if ply.IsActiveTraitor then return ply:IsActiveTraitor() end
-  if ply.IsTraitor then return ply:IsTraitor() end
-  if ply.GetRole and ROLE_TRAITOR then return ply:GetRole() == ROLE_TRAITOR end
-  return false
-end
+  local function isActiveTraitor(ply)
+    if not IsValid(ply) then return false end
+    if ply.IsActiveTraitor and ply:IsActiveTraitor() then return true end
+    if ply.IsTraitor and ply:IsTraitor() then return true end
+    if ply.GetSubRole and ROLE_TRAITOR and ply:GetSubRole() == ROLE_TRAITOR then return true end
+    if ply.GetRole and ROLE_TRAITOR and ply:GetRole() == ROLE_TRAITOR then return true end
+    if ply.GetBaseRole and ROLE_TRAITOR and ply:GetBaseRole() == ROLE_TRAITOR then return true end
+    if ply.GetTeam and TEAM_TRAITOR and ply:GetTeam() == TEAM_TRAITOR then return true end
+    return false
+  end
 
 local function requestPointshopOpen()
   if pointshopState.requestPending then return end

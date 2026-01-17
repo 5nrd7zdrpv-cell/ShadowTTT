@@ -44,9 +44,12 @@ local TRAITOR_ROLE = ROLE_TRAITOR or 2
 
 local function isActiveTraitor(ply)
   if not IsValid(ply) then return false end
-  if ply.IsActiveTraitor then return ply:IsActiveTraitor() end
-  if ply.IsTraitor then return ply:IsTraitor() end
-  if ply.GetRole and ROLE_TRAITOR then return ply:GetRole() == ROLE_TRAITOR end
+  if ply.IsActiveTraitor and ply:IsActiveTraitor() then return true end
+  if ply.IsTraitor and ply:IsTraitor() then return true end
+  if ply.GetSubRole and ROLE_TRAITOR and ply:GetSubRole() == ROLE_TRAITOR then return true end
+  if ply.GetRole and ROLE_TRAITOR and ply:GetRole() == ROLE_TRAITOR then return true end
+  if ply.GetBaseRole and ROLE_TRAITOR and ply:GetBaseRole() == ROLE_TRAITOR then return true end
+  if ply.GetTeam and TEAM_TRAITOR and ply:GetTeam() == TEAM_TRAITOR then return true end
   return false
 end
 
@@ -138,11 +141,12 @@ local function buildItemData(id, wep, fallbackCategory)
 end
 
 local function hasTraitorRole(roleList)
+  if roleList == nil then return false end
+  if isnumber(roleList) then return roleList == TRAITOR_ROLE end
   if not istable(roleList) then return false end
-  for _, role in ipairs(roleList) do
-    if role == TRAITOR_ROLE then
-      return true
-    end
+  if roleList[TRAITOR_ROLE] then return true end
+  for _, role in pairs(roleList) do
+    if role == TRAITOR_ROLE then return true end
   end
   return false
 end
